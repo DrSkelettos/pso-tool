@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PSO Tool – PDF Checkbox Erkennung</title>
+    <link rel="stylesheet" href="libs/bootstrap.min.css">
+    <link rel="stylesheet" href="styles/app.css">
+</head>
+<body class="bg-light">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container-fluid">
+            <span class="navbar-brand fw-bold">PSO Tool – PDF Checkbox Erkennung</span>
+            <div class="d-flex align-items-center gap-2">
+                <small class="text-secondary me-2">Vollständig lokal · Kein Upload · Kein Server</small>
+                <span id="statusBadge" class="badge bg-secondary">Initialisiere OpenCV...</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+        <div class="row g-3">
+
+            <!-- ===== LEFT PANEL: Controls ===== -->
+            <div class="col-xl-3 col-lg-4">
+
+                <!-- Step 1: PDF laden -->
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header bg-primary text-white fw-semibold">
+                        1. PDF laden
+                    </div>
+                    <div class="card-body">
+                        <input type="file" id="pdfInput" class="form-control" accept="application/pdf">
+                        <div class="form-text mt-1">
+                            <span class="text-success">&#x1F512;</span>
+                            Nur lokale Verarbeitung. Keine Daten verlassen Ihr Gerät.
+                        </div>
+                        <div id="pdfInfo" class="mt-2 text-muted small"></div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Template laden -->
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header bg-primary text-white fw-semibold">
+                        2. Template laden
+                    </div>
+                    <div class="card-body">
+                        <label class="form-label small text-muted">Eigenes Template (JSON):</label>
+                        <input type="file" id="templateInput" class="form-control mb-2" accept="application/json">
+                        <hr class="my-2">
+                        <label class="form-label small text-muted">Oder Beispiel verwenden:</label>
+                        <button id="loadExampleTemplate" class="btn btn-outline-secondary btn-sm w-100">
+                            Beispiel-Template laden
+                        </button>
+                        <div id="templateInfo" class="mt-2 text-success small fw-semibold"></div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Einstellungen -->
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header bg-secondary text-white fw-semibold">
+                        3. Einstellungen
+                    </div>
+                    <div class="card-body">
+
+                        <label class="form-label small mb-0">
+                            Render-Skalierung:
+                            <span class="badge bg-light text-dark" id="scaleValue">2.0</span>x
+                        </label>
+                        <input type="range" id="renderScale" class="form-range"
+                               min="1" max="4" step="0.5" value="2">
+
+                        <label class="form-label small mb-0 mt-2">
+                            Binarisierungs-Threshold:
+                            <span class="badge bg-light text-dark" id="thresholdValue">128</span>
+                        </label>
+                        <input type="range" id="thresholdSlider" class="form-range"
+                               min="50" max="240" step="1" value="128">
+
+                        <label class="form-label small mb-0 mt-2">
+                            Ankreuz-Schwellwert (ratio):
+                            <span class="badge bg-light text-dark" id="ratioValue">0.12</span>
+                        </label>
+                        <input type="range" id="ratioSlider" class="form-range"
+                               min="0.01" max="0.50" step="0.01" value="0.12">
+
+                        <div class="mt-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="morphOps">
+                                <label class="form-check-label small" for="morphOps">
+                                    Morphologische Ops (Rauschreduzierung)
+                                </label>
+                            </div>
+                            <div class="form-check form-switch mt-1" id="morphTypeWrapper" style="display:none;">
+                                <label class="form-check-label small me-2" for="morphType">Typ:</label>
+                                <select id="morphType" class="form-select form-select-sm d-inline-block w-auto">
+                                    <option value="opening">Opening</option>
+                                    <option value="closing">Closing</option>
+                                    <option value="erosion">Erosion</option>
+                                    <option value="dilation">Dilation</option>
+                                </select>
+                            </div>
+                            <div class="form-check form-switch mt-1">
+                                <input class="form-check-input" type="checkbox" id="showOverlay" checked>
+                                <label class="form-check-label small" for="showOverlay">
+                                    Overlay anzeigen (Grün/Rot)
+                                </label>
+                            </div>
+                            <div class="form-check form-switch mt-1">
+                                <input class="form-check-input" type="checkbox" id="showDebugInfo">
+                                <label class="form-check-label small" for="showDebugInfo">
+                                    Debug-Details anzeigen
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Analyse & Export -->
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header bg-success text-white fw-semibold">
+                        4. Analyse &amp; Export
+                    </div>
+                    <div class="card-body d-grid gap-2">
+                        <button id="analyzeBtn" class="btn btn-success" disabled>
+                            &#9654; Analyse starten
+                        </button>
+                        <button id="exportJsonBtn" class="btn btn-outline-primary" disabled>
+                            &#8595; JSON exportieren
+                        </button>
+                        <button id="exportCsvBtn" class="btn btn-outline-secondary" disabled>
+                            &#8595; CSV exportieren
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Page Navigation -->
+                <div class="card mb-3 shadow-sm" id="pageNav" style="display:none;">
+                    <div class="card-header fw-semibold">Seitennavigation</div>
+                    <div class="card-body d-flex align-items-center gap-2 py-2">
+                        <button id="prevPage" class="btn btn-sm btn-outline-secondary">&laquo; Zurück</button>
+                        <span id="pageInfo" class="flex-grow-1 text-center small">Seite 1 / 1</span>
+                        <button id="nextPage" class="btn btn-sm btn-outline-secondary">Weiter &raquo;</button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- ===== CENTER PANEL: PDF Canvas ===== -->
+            <div class="col-xl-6 col-lg-5">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold">PDF-Vorschau</span>
+                        <div>
+                            <span class="badge bg-success me-1" id="checkedCount">0 angekreuzt</span>
+                            <span class="badge bg-danger" id="uncheckedCount">0 leer</span>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="canvas-wrapper" id="canvasWrapper">
+                            <!-- Empty state -->
+                            <div id="emptyState" class="empty-state text-center p-5 text-muted">
+                                <div class="display-3 mb-3">&#128196;</div>
+                                <h5>Noch keine PDF geladen</h5>
+                                <p class="small">
+                                    Laden Sie eine PDF-Datei und ein Template,<br>
+                                    um die Checkbox-Erkennung zu starten.
+                                </p>
+                            </div>
+                            <!-- Canvas container (overlapping canvases) -->
+                            <div class="canvas-container" id="canvasContainer" style="display:none;">
+                                <canvas id="pdfCanvas"></canvas>
+                                <canvas id="overlayCanvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== RIGHT PANEL: Results ===== -->
+            <div class="col-xl-3 col-lg-3">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header fw-semibold">Ergebnis (JSON)</div>
+                    <div class="card-body p-2">
+                        <pre id="jsonOutput" class="json-output mb-0"></pre>
+                    </div>
+                </div>
+
+                <!-- Debug details (hidden by default) -->
+                <div class="card shadow-sm" id="debugCard" style="display:none;">
+                    <div class="card-header fw-semibold">Debug-Details</div>
+                    <div class="card-body p-2">
+                        <div id="debugOutput" class="debug-output"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /row -->
+    </div><!-- /container -->
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display:none;">
+        <div class="text-center text-white">
+            <div class="spinner-border spinner-border mb-3" role="status" aria-hidden="true"></div>
+            <div id="loadingMessage" class="fw-semibold fs-5">Lädt...</div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer"
+         style="z-index: 11000;"></div>
+
+    <!-- ==============================================
+         SCRIPTS
+         Order is critical:
+         1. OpenCV Module config (before opencv.js)
+         2. PDF.js
+         3. OpenCV.js (async WASM init)
+         4. Bootstrap
+         5. Application modules (in dependency order)
+    ================================================ -->
+
+    <!-- OpenCV Module config MUST be defined before opencv.js is loaded -->
+    <script>
+        /**
+         * OpenCV.js WASM Runtime initialization hook.
+         * This must be defined as a global before opencv.js loads.
+         * When the WASM module finishes initializing, it calls onRuntimeInitialized,
+         * which we use to signal that cv is ready.
+         */
+        var Module = {
+            onRuntimeInitialized: function () {
+                document.dispatchEvent(new CustomEvent('opencv-ready'));
+            }
+        };
+    </script>
+
+    <script src="libs/pdf.min.js"></script>
+    <script src="libs/opencv.js"></script>
+    <script src="libs/bootstrap.bundle.min.js"></script>
+
+    <!-- Application modules -->
+    <script src="js/template-manager.js"></script>
+    <script src="js/pdf-handler.js"></script>
+    <script src="js/image-processing.js"></script>
+    <script src="js/checkbox-detector.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+
+</body>
+</html>
