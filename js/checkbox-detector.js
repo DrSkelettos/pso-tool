@@ -49,11 +49,11 @@ class CheckboxDetector {
         const results = [];
 
         for (const field of scaledFields) {
-            if (field.type !== 'checkbox') {
-                // Extensibility hook: non-checkbox fields are skipped but could
-                // be handled by subclasses or additional detectors later.
-                continue;
-            }
+            // if (field.type !== 'checkbox') {
+            //     // Extensibility hook: non-checkbox fields are skipped but could
+            //     // be handled by subclasses or additional detectors later.
+            //     continue;
+            // }
 
             try {
                 const result = this._detectOne(binaryMat, field);

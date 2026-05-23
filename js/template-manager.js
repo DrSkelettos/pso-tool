@@ -146,7 +146,7 @@ class TemplateManager {
             throw new Error('Template muss mindestens ein Feld in "fields" enthalten.');
         }
 
-        const requiredField = ['id', 'type', 'page', 'x', 'y', 'width', 'height'];
+        const requiredField = ['id', 'page', 'x', 'y', 'width', 'height'];
         const seenIds = new Set();
 
         for (const field of template.fields) {
