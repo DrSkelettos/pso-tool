@@ -120,6 +120,12 @@ class PDFHandler {
         const renderContext = {
             canvasContext: ctx,
             viewport:      viewport,
+            // Disable annotation rendering — interactive form-field annotations
+            // (e.g. blue PDF widget boxes) would otherwise be painted onto the
+            // canvas, appear dark in grayscale, and confuse the marker detector.
+            annotationMode: (typeof pdfjsLib.AnnotationMode !== 'undefined')
+                ? pdfjsLib.AnnotationMode.DISABLE
+                : 0,
         };
 
         await page.render(renderContext).promise;

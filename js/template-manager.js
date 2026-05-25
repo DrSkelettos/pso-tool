@@ -4,29 +4,32 @@
  * Manages form templates that define the positions of checkboxes
  * on scanned PDF forms.
  *
- * A template is a JSON document with the following structure:
+ * Template format (v2 — with perspective correction):
  *
  * {
  *   "name": "my-form",
- *   "pageWidth": 2480,      // Expected page width in pixels (e.g. A4 at 300 DPI)
- *   "pageHeight": 3508,     // Expected page height in pixels
+ *   "normalizedWidth":  2480,   // Output width of perspective-corrected canvas
+ *   "normalizedHeight": 3508,   // Output height of perspective-corrected canvas
  *   "fields": [
  *     {
  *       "id": "question_1_yes",
- *       "label": "Frage 1: Ja",      // optional, human-readable
  *       "type": "checkbox",
- *       "page": 1,                   // 1-based page number
- *       "x": 320,                    // left edge in template pixels
- *       "y": 540,                    // top edge in template pixels
- *       "width": 50,
- *       "height": 50
+ *       "page": 1,
+ *       "x": 420,    // Position in normalised coordinate space (pixels)
+ *       "y": 820,
+ *       "width": 28,
+ *       "height": 28
  *     }
  *   ]
  * }
  *
- * Template coordinates are always given in the coordinate space of the
- * template's declared page size. When the PDF is rendered at a different
- * resolution, coordinates are scaled automatically via scaleField().
+ * Backward compatibility (v1 — without perspective correction):
+ *   Templates that use "pageWidth"/"pageHeight" instead of
+ *   "normalizedWidth"/"normalizedHeight" are still accepted.
+ *   In the legacy pipeline they are scaled to match the rendered canvas.
+ *   In the new pipeline they define the normalised output dimensions.
+ *
+ * All field IDs within a template must be unique.
  */
 class TemplateManager {
 
@@ -122,26 +125,33 @@ class TemplateManager {
 
     /**
      * Validate template structure.
-     * Throws descriptive errors so the user knows exactly what is wrong.
+     * Accepts both v1 (pageWidth/pageHeight) and v2 (normalizedWidth/normalizedHeight).
      *
      * @param {Object} template
      * @throws {Error}
      * @private
      */
     _validate(template) {
-        const requiredRoot = ['name', 'pageWidth', 'pageHeight', 'fields'];
-        for (const key of requiredRoot) {
-            if (!(key in template)) {
-                throw new Error(`Pflichtfeld fehlt im Template: "${key}"`);
-            }
+        if (!template.name) {
+            throw new Error('Pflichtfeld fehlt im Template: "name"');
         }
 
-        if (typeof template.pageWidth !== 'number' || template.pageWidth <= 0) {
-            throw new Error('"pageWidth" muss eine positive Zahl sein.');
+        // Accept either naming convention
+        const hasNormalized = 'normalizedWidth' in template && 'normalizedHeight' in template;
+        const hasPage       = 'pageWidth'       in template && 'pageHeight'       in template;
+
+        if (!hasNormalized && !hasPage) {
+            throw new Error(
+                'Template muss entweder "normalizedWidth"/"normalizedHeight" ' +
+                'oder "pageWidth"/"pageHeight" enthalten.'
+            );
         }
-        if (typeof template.pageHeight !== 'number' || template.pageHeight <= 0) {
-            throw new Error('"pageHeight" muss eine positive Zahl sein.');
-        }
+
+        const w = this._getTemplateWidth(template);
+        const h = this._getTemplateHeight(template);
+        if (typeof w !== 'number' || w <= 0) throw new Error('"normalizedWidth" / "pageWidth" muss eine positive Zahl sein.');
+        if (typeof h !== 'number' || h <= 0) throw new Error('"normalizedHeight" / "pageHeight" muss eine positive Zahl sein.');
+
         if (!Array.isArray(template.fields) || template.fields.length === 0) {
             throw new Error('Template muss mindestens ein Feld in "fields" enthalten.');
         }
@@ -163,10 +173,41 @@ class TemplateManager {
             }
             seenIds.add(field.id);
 
+            // Default type to "checkbox" if omitted for backward compat
+            if (!field.type) field.type = 'checkbox';
+
             if (typeof field.page !== 'number' || field.page < 1) {
                 throw new Error(`Feld "${field.id}": "page" muss eine positive Ganzzahl sein.`);
             }
         }
+    }
+
+    // ================================================================
+    // Dimension helpers
+    // ================================================================
+
+    /** @private */
+    _getTemplateWidth(t) {
+        return t.normalizedWidth ?? t.pageWidth;
+    }
+
+    /** @private */
+    _getTemplateHeight(t) {
+        return t.normalizedHeight ?? t.pageHeight;
+    }
+
+    /**
+     * Return the normalised (target) page dimensions from the current template.
+     * These are the dimensions of the perspective-corrected output canvas.
+     *
+     * @returns {{width: number, height: number}}
+     */
+    getNormalizedDimensions() {
+        if (!this.currentTemplate) return { width: 2480, height: 3508 };
+        return {
+            width:  this._getTemplateWidth(this.currentTemplate),
+            height: this._getTemplateHeight(this.currentTemplate),
+        };
     }
 
     // ================================================================
@@ -211,10 +252,15 @@ class TemplateManager {
      * Scale a single field's coordinates from template-space to
      * canvas-space.
      *
-     * Template coordinates are defined relative to (pageWidth × pageHeight).
+     * Template coordinates are defined relative to (normalizedWidth × normalizedHeight)
+     * or (pageWidth × pageHeight) in legacy templates.
      * When the PDF is rendered at a different size (due to scale factor),
      * the canvas dimensions differ. This method converts a field's
      * {x, y, width, height} from template-pixel space to canvas-pixel space.
+     *
+     * In the v2 marker-corrected pipeline, fields are in the normalised
+     * coordinate space and no scaling is needed. Only use scaleField() in
+     * the legacy (no-marker) fallback pipeline.
      *
      * @param {Object} field         - Original template field
      * @param {number} canvasWidth   - Actual rendered canvas width in pixels
@@ -222,8 +268,10 @@ class TemplateManager {
      * @returns {Object} New field object with scaled coordinates
      */
     scaleField(field, canvasWidth, canvasHeight) {
-        const scaleX = canvasWidth  / this.currentTemplate.pageWidth;
-        const scaleY = canvasHeight / this.currentTemplate.pageHeight;
+        const tmplW  = this._getTemplateWidth(this.currentTemplate);
+        const tmplH  = this._getTemplateHeight(this.currentTemplate);
+        const scaleX = canvasWidth  / tmplW;
+        const scaleY = canvasHeight / tmplH;
 
         return {
             ...field,

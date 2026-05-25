@@ -1,21 +1,25 @@
 /**
  * ImageProcessor
  * ==============
- * Converts a rendered PDF canvas into a binary OpenCV Mat that the
- * CheckboxDetector can analyse.
+ * Converts a rendered (or perspective-corrected) PDF canvas into a binary
+ * OpenCV Mat that the CheckboxDetector can analyse.
  *
- * Processing pipeline:
- *   Canvas (RGBA)
- *     → cv.imread()         reads pixel data from the canvas
- *     → cv.cvtColor()       RGBA → Grayscale
- *     → cv.threshold()      Grayscale → Binary (THRESH_BINARY_INV)
- *     → [morphology]        optional noise reduction
+ * Two thresholding modes are available:
+ *
+ *   ADAPTIVE (default, recommended)
+ *     cv.adaptiveThreshold() with ADAPTIVE_THRESH_GAUSSIAN_C + THRESH_BINARY_INV
+ *     — adapts to local brightness variations caused by scanner shadows,
+ *       uneven illumination, or paper colour differences.
+ *     — requires a light Gaussian blur beforehand to suppress noise.
+ *
+ *   GLOBAL (legacy / fallback)
+ *     cv.threshold() with THRESH_BINARY_INV and a fixed intensity value.
+ *     — fast but sensitive to brightness differences across the page.
  *
  * Why THRESH_BINARY_INV?
  *   After thresholding, dark regions (pen marks, X-crosses, ticks) become
  *   WHITE (value 255) and the light background becomes BLACK (0).
- *   cv.countNonZero() then directly counts the dark/marked pixels, which
- *   is what the CheckboxDetector needs.
+ *   cv.countNonZero() then directly counts the dark/marked pixels.
  *
  * IMPORTANT: The caller is responsible for calling .delete() on the
  * returned Mat to release OpenCV/WASM memory.
@@ -23,16 +27,21 @@
 class ImageProcessor {
 
     /**
-     * @param {Object} [config]
-     * @param {number}  [config.thresholdValue=128]      - Pixel intensity below which a pixel is
-     *                                                     considered "dark". Range: 0–255.
-     * @param {boolean} [config.morphologicalOps=false]  - Apply morphological noise reduction.
-     * @param {string}  [config.morphType='opening']     - 'opening' | 'closing' | 'erosion' | 'dilation'
+     * @param {Object}  [config]
+     * @param {boolean} [config.useAdaptive=true]         - Use adaptive threshold (recommended)
+     * @param {number}  [config.adaptiveBlockSize=31]     - Adaptive: local neighbourhood size (odd ≥ 3)
+     * @param {number}  [config.adaptiveC=10]             - Adaptive: constant subtracted from local mean
+     * @param {number}  [config.thresholdValue=128]       - Global: fixed intensity threshold (0–255)
+     * @param {boolean} [config.morphologicalOps=false]   - Apply morphological noise reduction
+     * @param {string}  [config.morphType='opening']      - 'opening'|'closing'|'erosion'|'dilation'
      */
     constructor(config = {}) {
-        this.thresholdValue   = config.thresholdValue   ?? 128;
-        this.morphologicalOps = config.morphologicalOps ?? false;
-        this.morphType        = config.morphType        ?? 'opening';
+        this.useAdaptive       = config.useAdaptive       ?? true;
+        this.adaptiveBlockSize = config.adaptiveBlockSize ?? 31;
+        this.adaptiveC         = config.adaptiveC         ?? 10;
+        this.thresholdValue    = config.thresholdValue    ?? 128;
+        this.morphologicalOps  = config.morphologicalOps  ?? false;
+        this.morphType         = config.morphType         ?? 'opening';
     }
 
     // ================================================================
@@ -46,7 +55,10 @@ class ImageProcessor {
      *   - Dark pixels (checkbox marks) → 255 (white / non-zero)
      *   - Light pixels (background)    →   0 (black / zero)
      *
-     * @param {HTMLCanvasElement} canvas - The rendered PDF page canvas
+     * In adaptive mode (default), the threshold is computed locally per
+     * neighbourhood, making it robust against uneven lighting and shadows.
+     *
+     * @param {HTMLCanvasElement} canvas - The rendered/normalized PDF page canvas
      * @returns {cv.Mat} Binary Mat — caller must call .delete() when done!
      */
     processCanvas(canvas) {
@@ -56,18 +68,17 @@ class ImageProcessor {
         // Step 2: Convert RGBA → Grayscale (single channel)
         const gray = new cv.Mat();
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        src.delete(); // Free RGBA source
+        src.delete();
 
-        // Step 3: Apply adaptive or fixed thresholding
-        const binary = new cv.Mat();
-        cv.threshold(
-            gray,
-            binary,
-            this.thresholdValue,
-            255,
-            cv.THRESH_BINARY_INV
-        );
-        gray.delete(); // Free grayscale intermediate
+        let binary;
+
+        if (this.useAdaptive) {
+            binary = this._adaptiveThreshold(gray);
+        } else {
+            binary = new cv.Mat();
+            cv.threshold(gray, binary, this.thresholdValue, 255, cv.THRESH_BINARY_INV);
+        }
+        gray.delete();
 
         // Step 4 (optional): Morphological operations for noise reduction
         if (this.morphologicalOps) {
@@ -75,6 +86,38 @@ class ImageProcessor {
             binary.delete();
             return cleaned;
         }
+
+        return binary;
+    }
+
+    /**
+     * Apply adaptive Gaussian thresholding.
+     * A 3×3 Gaussian blur is applied first to suppress high-frequency noise
+     * that would otherwise create many false-positive non-zero pixels.
+     *
+     * @param {cv.Mat} gray - Single-channel grayscale Mat
+     * @returns {cv.Mat} Binary Mat (THRESH_BINARY_INV)
+     * @private
+     */
+    _adaptiveThreshold(gray) {
+        // Ensure block size is odd and at least 3
+        let blockSize = this.adaptiveBlockSize;
+        if (blockSize < 3) blockSize = 3;
+        if (blockSize % 2 === 0) blockSize += 1;
+
+        // Light pre-blur reduces salt-and-pepper noise before adaptive threshold
+        const blurred = new cv.Mat();
+        cv.GaussianBlur(gray, blurred, new cv.Size(3, 3), 0);
+
+        const binary = new cv.Mat();
+        cv.adaptiveThreshold(
+            blurred, binary, 255,
+            cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv.THRESH_BINARY_INV,
+            blockSize,
+            this.adaptiveC
+        );
+        blurred.delete();
 
         return binary;
     }
@@ -143,9 +186,12 @@ class ImageProcessor {
      * @param {Object} config - Partial configuration object
      */
     updateConfig(config) {
-        if ('thresholdValue'   in config) this.thresholdValue   = config.thresholdValue;
-        if ('morphologicalOps' in config) this.morphologicalOps = config.morphologicalOps;
-        if ('morphType'        in config) this.morphType        = config.morphType;
+        if ('useAdaptive'       in config) this.useAdaptive       = config.useAdaptive;
+        if ('adaptiveBlockSize' in config) this.adaptiveBlockSize = config.adaptiveBlockSize;
+        if ('adaptiveC'         in config) this.adaptiveC         = config.adaptiveC;
+        if ('thresholdValue'    in config) this.thresholdValue    = config.thresholdValue;
+        if ('morphologicalOps'  in config) this.morphologicalOps  = config.morphologicalOps;
+        if ('morphType'         in config) this.morphType         = config.morphType;
     }
 
     /**
@@ -154,9 +200,12 @@ class ImageProcessor {
      */
     getConfig() {
         return {
-            thresholdValue:   this.thresholdValue,
-            morphologicalOps: this.morphologicalOps,
-            morphType:        this.morphType,
+            useAdaptive:       this.useAdaptive,
+            adaptiveBlockSize: this.adaptiveBlockSize,
+            adaptiveC:         this.adaptiveC,
+            thresholdValue:    this.thresholdValue,
+            morphologicalOps:  this.morphologicalOps,
+            morphType:         this.morphType,
         };
     }
 }

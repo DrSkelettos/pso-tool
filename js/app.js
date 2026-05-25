@@ -3,36 +3,40 @@
  * ====
  * Main application controller — orchestrates all modules.
  *
- * Data flow:
+ * v2 Pipeline (requireMarkers = true, default):
  *
- *   User picks PDF  →  PDFHandler.loadFile()
- *                  →  PDFHandler.renderCurrentPage(canvas)
+ *   PDF render  →  pdfCanvas
+ *   MarkerDetector.detect(pdfCanvas)            → markerResult
+ *   PerspectiveCorrector.correct(...)            → normalizedCanvas
+ *   ImageProcessor.processCanvas(normalized)     → binaryMat  (adaptive threshold)
+ *   template fields (no scaling — already in normalized coords)
+ *   CheckboxDetector.detectAll(binaryMat, fields) → results  (with confidence)
+ *   UI.showResults() + UI.drawOverlay()
  *
- *   User picks Template → TemplateManager.loadFromFile()
+ * Fallback Pipeline (requireMarkers = false):
  *
- *   User clicks Analyse →
- *       TemplateManager.scaleFieldsForPage()
- *     → ImageProcessor.processCanvas()          ← canvas
- *     → CheckboxDetector.detectAll()            ← binaryMat + scaledFields
- *     → CheckboxDetector.resultsToJSON()
- *     → UI.showResults() + UI.drawOverlay()
+ *   PDF render  →  pdfCanvas
+ *   ImageProcessor.processCanvas(pdfCanvas)      → binaryMat
+ *   template fields (scaled from template space to canvas space)
+ *   CheckboxDetector.detectAll(binaryMat, fields) → results
  *
- * All processing is synchronous from the browser's perspective
- * (no network calls, no server, no uploads).
- *
- * OpenCV.js initialises its WASM module asynchronously. Analysis is
- * gated behind a readiness flag that is set when the 'opencv-ready'
- * custom event fires from index.html's Module.onRuntimeInitialized hook.
+ * All processing is local — no backend, no network calls.
+ * OpenCV.js initialises its WASM module asynchronously.
  */
 class App {
 
     constructor() {
         // ---- Modules ----
-        this.pdfHandler       = new PDFHandler();
-        this.templateManager  = new TemplateManager();
-        this.imageProcessor   = new ImageProcessor();
-        this.checkboxDetector = new CheckboxDetector();
-        this.ui               = new UI();
+        this.pdfHandler           = new PDFHandler();
+        this.templateManager      = new TemplateManager();
+        this.imageProcessor       = new ImageProcessor();
+        this.checkboxDetector     = new CheckboxDetector();
+        this.markerDetector       = new MarkerDetector();
+        this.perspectiveCorrector = new PerspectiveCorrector();
+        this.ui                   = new UI();
+
+        // Expose detector ref for debug overlay rendering (search region visualization)
+        window._markerDetectorRef = this.markerDetector;
 
         // ---- State flags ----
         /** @type {boolean} OpenCV WASM has finished loading */
@@ -45,11 +49,14 @@ class App {
         this.templateLoaded = false;
 
         // ---- Last analysis results (for re-draw, export) ----
-        /** @type {Array|null} Enriched DetectionResult array (includes scaledField) */
+        /** @type {Array|null} Enriched DetectionResult array */
         this.lastResults = null;
 
         /** @type {Object|null} Flat JSON output from the last analysis */
         this.lastJSON = null;
+
+        /** @type {HTMLCanvasElement|null} Last normalised canvas (markers pipeline) */
+        this.lastNormalizedCanvas = null;
 
         // Initialise
         this._bindEvents();
@@ -134,6 +141,23 @@ class App {
                 this.ui.drawOverlay(this.lastResults, show);
             }
         });
+
+        // v2: new controls (guard with ?. — only wired up if index.html has the elements)
+        if (typeof this.ui.onRequireMarkersChange === 'function') {
+            this.ui.onRequireMarkersChange(() => this._clearResults());
+        }
+        if (typeof this.ui.onInnerPaddingChange === 'function') {
+            this.ui.onInnerPaddingChange((v) =>
+                this.checkboxDetector.updateConfig({ innerPadding: v }));
+        }
+        if (typeof this.ui.onUncertainThresholdChange === 'function') {
+            this.ui.onUncertainThresholdChange((v) =>
+                this.checkboxDetector.updateConfig({ uncertainThreshold: v }));
+        }
+        if (typeof this.ui.onAdaptiveBlockSizeChange === 'function') {
+            this.ui.onAdaptiveBlockSizeChange((v) =>
+                this.imageProcessor.updateConfig({ adaptiveBlockSize: v }));
+        }
     }
 
     // ================================================================
@@ -315,10 +339,14 @@ class App {
     /**
      * Run the full checkbox detection pipeline on the currently visible page.
      *
-     * Pipeline:
-     *   canvas → ImageProcessor → binary Mat
-     *   template fields (scaled) → CheckboxDetector → results
-     *   results → UI (JSON panel, overlay)
+     * v2 (requireMarkers=true):
+     *   pdfCanvas → MarkerDetector → PerspectiveCorrector → normalizedCanvas
+     *   → ImageProcessor (adaptive) → binaryMat
+     *   → CheckboxDetector (with inner padding + confidence)
+     *
+     * Fallback (requireMarkers=false):
+     *   pdfCanvas → ImageProcessor → binaryMat
+     *   → CheckboxDetector (with scaled fields)
      *
      * @private
      */
@@ -338,72 +366,169 @@ class App {
 
         this.ui.showLoading('Analyse läuft…');
 
-        // Yield to the browser event loop so the overlay renders
-        // before the CPU-intensive OpenCV work begins.
+        // Yield so the loading overlay renders before CPU-intensive work begins
         await new Promise(resolve => setTimeout(resolve, 30));
 
         let binaryMat = null;
 
         try {
-            const canvas      = this.ui.pdfCanvas;
-            const currentPage = this.pdfHandler.currentPage;
-            const config      = this.ui.getConfig();
+            const originalCanvas = this.ui.pdfCanvas;
+            const currentPage    = this.pdfHandler.currentPage;
+            const config         = this.ui.getConfig();
 
-            // Push UI config into processing modules
+            const requireMarkers = config.requireMarkers ?? true;
+
+            // Sync all module configs from UI
             this.imageProcessor.updateConfig({
-                thresholdValue:   config.thresholdValue,
-                morphologicalOps: config.morphologicalOps,
-                morphType:        config.morphType,
+                useAdaptive:       config.useAdaptive       ?? true,
+                adaptiveBlockSize: config.adaptiveBlockSize ?? 31,
+                adaptiveC:         config.adaptiveC         ?? 10,
+                thresholdValue:    config.thresholdValue    ?? 128,
+                morphologicalOps:  config.morphologicalOps  ?? false,
+                morphType:         config.morphType         ?? 'opening',
             });
             this.checkboxDetector.updateConfig({
-                blackPixelRatio: config.blackPixelRatio,
+                blackPixelRatio:    config.blackPixelRatio    ?? 0.12,
+                innerPadding:       config.innerPadding       ?? 5,
+                emptyBaseline:      config.emptyBaseline      ?? 0.03,
+                filledBaseline:     config.filledBaseline     ?? 0.25,
+                uncertainThreshold: config.uncertainThreshold ?? 0.75,
             });
 
-            // Scale template fields to match the rendered canvas dimensions
-            const scaledFields = this.templateManager.scaleFieldsForPage(
-                currentPage,
-                canvas.width,
-                canvas.height
-            );
+            let rawResults;
 
-            if (scaledFields.length === 0) {
-                this.ui.showToast(
-                    `Keine Felder für Seite ${currentPage} im Template definiert.`,
-                    'warning'
+            // ----------------------------------------------------------------
+            // v2 Pipeline: Marker detection + perspective correction
+            // ----------------------------------------------------------------
+            if (requireMarkers) {
+                // 1. Detect corner alignment markers
+                this.ui.showLoading('Eckmarker werden erkannt…');
+                const markerResult = this.markerDetector.detect(originalCanvas);
+
+                // 2. Update marker status indicator in UI
+                if (typeof this.ui.updateMarkerStatus === 'function') {
+                    this.ui.updateMarkerStatus(markerResult);
+                }
+
+                // Draw marker debug overlay on the overlayCanvas so it stays
+                // visible even after showNormalizedCanvas replaces pdfCanvas content.
+                // Pass the original canvas only for dimension reference.
+                if (typeof this.ui.drawMarkerOverlay === 'function') {
+                    this.ui.drawMarkerOverlay(markerResult, originalCanvas);
+                }
+
+                if (!markerResult.allFound) {
+                    const missing = [];
+                    if (!markerResult.topLeft)     missing.push('Oben-Links');
+                    if (!markerResult.topRight)    missing.push('Oben-Rechts');
+                    if (!markerResult.bottomLeft)  missing.push('Unten-Links');
+                    if (!markerResult.bottomRight) missing.push('Unten-Rechts');
+
+                    const reason = !markerResult.sizeConsistent
+                        ? 'Marker haben sehr unterschiedliche Größen (Fehlpositiv?)'
+                        : `Ecken ohne Marker: ${missing.join(', ')}`;
+
+                    this.ui.showToast(
+                        `${markerResult.foundCount}/4 Marker gefunden. ${reason}. ` +
+                        'Render-Skalierung erhöhen oder Marker-Erkennung deaktivieren.',
+                        'danger',
+                        7000
+                    );
+                    return;
+                }
+
+                // 3. Perspective correction → normalised canvas
+                this.ui.showLoading('Perspektive wird korrigiert…');
+                const { width: normW, height: normH } =
+                    this.templateManager.getNormalizedDimensions();
+
+                this.lastNormalizedCanvas = this.perspectiveCorrector.correct(
+                    originalCanvas,
+                    markerResult,
+                    normW,
+                    normH
                 );
-                return;
+
+                // 4. Show normalised image
+                if (typeof this.ui.showNormalizedCanvas === 'function') {
+                    this.ui.showNormalizedCanvas(this.lastNormalizedCanvas);
+                }
+
+                // 5. Process normalised canvas → binary Mat (adaptive threshold)
+                this.ui.showLoading('Analyse läuft…');
+                binaryMat = this.imageProcessor.processCanvas(this.lastNormalizedCanvas);
+
+                // 6. Template fields already in normalised coords — no scaling
+                const fields = this.templateManager.getFieldsForPage(currentPage);
+
+                if (fields.length === 0) {
+                    this.ui.showToast(
+                        `Keine Felder für Seite ${currentPage} im Template.`,
+                        'warning'
+                    );
+                    return;
+                }
+
+                rawResults = this.checkboxDetector.detectAll(binaryMat, fields);
+
+                this.lastResults = rawResults.map((result, i) => ({
+                    ...result,
+                    scaledField: fields[i] ? { ...fields[i] } : null,
+                }));
+
+            } else {
+                // ----------------------------------------------------------------
+                // Fallback Pipeline: no markers, scale fields to canvas
+                // ----------------------------------------------------------------
+
+                if (typeof this.ui.updateMarkerStatus === 'function') {
+                    this.ui.updateMarkerStatus(null);
+                }
+
+                const scaledFields = this.templateManager.scaleFieldsForPage(
+                    currentPage,
+                    originalCanvas.width,
+                    originalCanvas.height
+                );
+
+                if (scaledFields.length === 0) {
+                    this.ui.showToast(
+                        `Keine Felder für Seite ${currentPage} im Template.`,
+                        'warning'
+                    );
+                    return;
+                }
+
+                binaryMat  = this.imageProcessor.processCanvas(originalCanvas);
+                rawResults = this.checkboxDetector.detectAll(binaryMat, scaledFields);
+
+                this.lastResults = rawResults.map((result, i) => ({
+                    ...result,
+                    scaledField: scaledFields[i] ?? null,
+                }));
             }
 
-            // Process canvas → binary Mat
-            binaryMat = this.imageProcessor.processCanvas(canvas);
-
-            // Detect checkboxes
-            const rawResults = this.checkboxDetector.detectAll(binaryMat, scaledFields);
-
-            // Enrich results with their scaled field coordinates (needed for overlay)
-            this.lastResults = rawResults.map((result, i) => ({
-                ...result,
-                scaledField: scaledFields[i] ?? null,
-            }));
-
-            // Generate flat JSON
+            // ----------------------------------------------------------------
+            // Common: generate output and update UI
+            // ----------------------------------------------------------------
             this.lastJSON = this.checkboxDetector.resultsToJSON(rawResults);
 
-            // Update UI
             this.ui.showResults(this.lastJSON, rawResults);
             this.ui.drawOverlay(this.lastResults, config.showOverlay);
+            this.ui.setExportEnabled(true);
 
-            const checkedCount = rawResults.filter(r => r.checked).length;
-            this.ui.showToast(
-                `Analyse abgeschlossen: ${checkedCount} von ${rawResults.length} Feldern angekreuzt.`,
-                'success'
-            );
+            const checkedCount   = rawResults.filter(r => r.checked).length;
+            const uncertainCount = rawResults.filter(r => r.uncertain).length;
+
+            let toastMsg = `Analyse: ${checkedCount}/${rawResults.length} angekreuzt`;
+            if (uncertainCount > 0) toastMsg += ` · ${uncertainCount} unsicher`;
+
+            this.ui.showToast(toastMsg, uncertainCount > 0 ? 'warning' : 'success');
 
         } catch (err) {
             this.ui.showToast(`Analyse-Fehler: ${err.message}`, 'danger');
             console.error('[App] Analysis error:', err);
         } finally {
-            // ALWAYS free OpenCV memory to prevent WASM heap exhaustion
             if (binaryMat) {
                 try { binaryMat.delete(); } catch (_) { /* already deleted */ }
             }
@@ -478,13 +603,15 @@ class App {
      * @private
      */
     _clearResults() {
-        this.lastResults = null;
-        this.lastJSON    = null;
+        this.lastResults          = null;
+        this.lastJSON             = null;
+        this.lastNormalizedCanvas = null;
         this.ui.setExportEnabled(false);
         this.ui.drawOverlay([], false);
-        this.ui.jsonOutput.textContent = '';
-        this.ui.checkedCount.textContent   = '0 angekreuzt';
-        this.ui.uncheckedCount.textContent = '0 leer';
+        if (this.ui.jsonOutput)          this.ui.jsonOutput.textContent        = '';
+        if (this.ui.checkedCount)        this.ui.checkedCount.textContent      = '0 angekreuzt';
+        if (this.ui.uncheckedCount)      this.ui.uncheckedCount.textContent    = '0 leer';
+        if (typeof this.ui.updateMarkerStatus === 'function') this.ui.updateMarkerStatus(null);
     }
 
     /**
