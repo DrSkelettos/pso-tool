@@ -1,0 +1,30 @@
+{
+  "pageWidth": 2480,
+  "pageHeight": 3508,
+  "fields": [
+    {
+      "id": "1_a_0",
+      "page": 1,
+      "x": 1645,
+      "y": 843,
+      "width": 36,
+      "height": 36
+    },
+    {
+      "id": "1_a_1",
+      "page": 1,
+      "x": 1895,
+      "y": 843,
+      "width": 36,
+      "height": 36
+    },
+    {
+      "id": "1_a_2",
+      "page": 1,
+      "x": 2142,
+      "y": 843,
+      "width": 36,
+      "height": 36
+    }
+  ]
+}

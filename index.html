@@ -1,301 +1,265 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PSO Tool – PDF Checkbox Erkennung</title>
-    <link rel="stylesheet" href="libs/bootstrap.min.css">
-    <link rel="stylesheet" href="styles/app.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PSO OMR Tool</title>
+  <link rel="stylesheet" href="libs/bootstrap.min.css" />
+  <style>
+    html, body { height: 100%; background: #f0f2f5; }
+    #sidebar {
+      width: 300px;
+      min-width: 260px;
+      max-width: 340px;
+      background: #fff;
+      border-right: 1px solid #dee2e6;
+      display: flex;
+      flex-direction: column;
+      padding: 1.25rem;
+      gap: 1rem;
+      overflow-y: auto;
+    }
+    #main-area { flex: 1; overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+    #app-wrapper { display: flex; height: 100vh; overflow: hidden; }
+
+    .canvas-container {
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      background: #1e1e1e;
+      overflow: auto;
+      max-height: 520px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+    .canvas-container canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+    #canvas-tabs .nav-link { font-size: 0.85rem; padding: 0.25rem 0.75rem; }
+
+    .result-row-checked    { background: rgba(25, 135, 84, 0.08); }
+    .result-row-uncertain  { background: rgba(255, 193, 7, 0.12); }
+    .result-row-empty      { background: rgba(220, 53, 69, 0.06); }
+
+    .badge-checked   { background: #198754; }
+    .badge-uncertain { background: #ffc107; color: #000; }
+    .badge-empty     { background: #dc3545; }
+
+    #progress-bar-wrap { display: none; }
+    #error-alert { display: none; }
+    #warning-alert { display: none; }
+    #results-section { display: none; }
+    #debug-section { display: none; }
+
+    .confidence-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: #e9ecef;
+      overflow: hidden;
+    }
+    .confidence-fill { height: 100%; border-radius: 3px; }
+
+    .logo-title { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em; color: #0d6efd; }
+    .logo-sub   { font-size: 0.72rem; color: #6c757d; margin-top: -2px; }
+
+    #debug-log {
+      font-size: 0.75rem;
+      font-family: monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      border-radius: 6px;
+      padding: 0.75rem;
+      max-height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    #debug-log .log-info  { color: #9cdcfe; }
+    #debug-log .log-warn  { color: #ffc107; }
+    #debug-log .log-error { color: #f48771; }
+    #debug-log .log-ok    { color: #4ec9b0; }
+
+    .upload-drop {
+      border: 2px dashed #0d6efd44;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      padding: 1rem;
+      text-align: center;
+    }
+    .upload-drop:hover, .upload-drop.drag-over {
+      background: #0d6efd0d;
+      border-color: #0d6efd;
+    }
+    .upload-drop input[type=file] { display: none; }
+    .upload-drop .upload-icon { font-size: 1.8rem; color: #0d6efd88; }
+    .upload-drop .upload-text { font-size: 0.82rem; color: #6c757d; margin-top: 0.25rem; }
+    .upload-filename { font-size: 0.82rem; color: #0d6efd; font-weight: 600; word-break: break-all; }
+  </style>
 </head>
-<body class="bg-light">
+<body>
+<div id="app-wrapper">
 
-    <!-- Navbar -->
-    <nav class="navbar navbar-dark bg-dark mb-4">
-        <div class="container-fluid">
-            <span class="navbar-brand fw-bold">PSO Tool – PDF Checkbox Erkennung</span>
-            <div class="d-flex align-items-center gap-2">
-                <small class="text-secondary me-2">Vollständig lokal · Kein Upload · Kein Server</small>
-                <span id="statusBadge" class="badge bg-secondary">Initialisiere OpenCV...</span>
-            </div>
-        </div>
-    </nav>
+  <!-- ═══════════════════════════════ SIDEBAR ═══════════════════════════════ -->
+  <div id="sidebar">
 
-    <div class="container-fluid px-4">
-        <div class="row g-3">
-
-            <!-- ===== LEFT PANEL: Controls ===== -->
-            <div class="col-xl-3 col-lg-4">
-
-                <!-- Step 1: PDF laden -->
-                <div class="card mb-3 shadow-sm">
-                    <div class="card-header bg-primary text-white fw-semibold">
-                        1. PDF laden
-                    </div>
-                    <div class="card-body">
-                        <input type="file" id="pdfInput" class="form-control" accept="application/pdf">
-                        <div class="form-text mt-1">
-                            <span class="text-success">&#x1F512;</span>
-                            Nur lokale Verarbeitung. Keine Daten verlassen Ihr Gerät.
-                        </div>
-                        <div id="pdfInfo" class="mt-2 text-muted small"></div>
-                    </div>
-                </div>
-
-                <!-- Step 2: Template laden -->
-                <div class="card mb-3 shadow-sm">
-                    <div class="card-header bg-primary text-white fw-semibold">
-                        2. Template laden
-                    </div>
-                    <div class="card-body">
-                        <label class="form-label small text-muted">Eigenes Template (JSON):</label>
-                        <input type="file" id="templateInput" class="form-control mb-2" accept="application/json">
-                        <hr class="my-2">
-                        <label class="form-label small text-muted">Oder Beispiel verwenden:</label>
-                        <button id="loadExampleTemplate" class="btn btn-outline-secondary btn-sm w-100">
-                            Beispiel-Template laden
-                        </button>
-                        <div id="templateInfo" class="mt-2 text-success small fw-semibold"></div>
-                    </div>
-                </div>
-
-                <!-- Step 3: Einstellungen -->
-                <div class="card mb-3 shadow-sm">
-                    <div class="card-header bg-secondary text-white fw-semibold">
-                        3. Einstellungen
-                    </div>
-                    <div class="card-body">
-
-                        <label class="form-label small mb-0">
-                            Render-Skalierung:
-                            <span class="badge bg-light text-dark" id="scaleValue">2.0</span>x
-                        </label>
-                        <input type="range" id="renderScale" class="form-range"
-                               min="1" max="4" step="0.5" value="2">
-
-                        <label class="form-label small mb-0 mt-2">
-                            Binarisierungs-Threshold (Fallback):
-                            <span class="badge bg-light text-dark" id="thresholdValue">128</span>
-                        </label>
-                        <input type="range" id="thresholdSlider" class="form-range"
-                               min="50" max="240" step="1" value="128">
-
-                        <label class="form-label small mb-0 mt-2">
-                            Adaptiver Block-Size:
-                            <span class="badge bg-light text-dark" id="adaptiveBlockSizeValue">31</span>
-                        </label>
-                        <input type="range" id="adaptiveBlockSizeSlider" class="form-range"
-                               min="11" max="71" step="2" value="31">
-
-                        <label class="form-label small mb-0 mt-2">
-                            Ankreuz-Schwellwert (ratio):
-                            <span class="badge bg-light text-dark" id="ratioValue">0.12</span>
-                        </label>
-                        <input type="range" id="ratioSlider" class="form-range"
-                               min="0.01" max="0.50" step="0.01" value="0.12">
-
-                        <label class="form-label small mb-0 mt-2">
-                            Inneres Padding (px):
-                            <span class="badge bg-light text-dark" id="innerPaddingValue">2</span>
-                        </label>
-                        <input type="range" id="innerPaddingSlider" class="form-range"
-                               min="0" max="15" step="1" value="2">
-
-                        <label class="form-label small mb-0 mt-2">
-                            Unsicher-Schwelle (Konfidenz):
-                            <span class="badge bg-light text-dark" id="uncertainValue">0.75</span>
-                        </label>
-                        <input type="range" id="uncertainSlider" class="form-range"
-                               min="0.1" max="1.0" step="0.05" value="0.75">
-
-                        <div class="mt-3">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="morphOps">
-                                <label class="form-check-label small" for="morphOps">
-                                    Morphologische Ops (Rauschreduzierung)
-                                </label>
-                            </div>
-                            <div class="form-check form-switch mt-1" id="morphTypeWrapper" style="display:none;">
-                                <label class="form-check-label small me-2" for="morphType">Typ:</label>
-                                <select id="morphType" class="form-select form-select-sm d-inline-block w-auto">
-                                    <option value="opening">Opening</option>
-                                    <option value="closing">Closing</option>
-                                    <option value="erosion">Erosion</option>
-                                    <option value="dilation">Dilation</option>
-                                </select>
-                            </div>
-                            <div class="form-check form-switch mt-1">
-                                <input class="form-check-input" type="checkbox" id="showOverlay" checked>
-                                <label class="form-check-label small" for="showOverlay">
-                                    Overlay anzeigen (Grün/Gelb/Rot)
-                                </label>
-                            </div>
-                            <div class="form-check form-switch mt-1">
-                                <input class="form-check-input" type="checkbox" id="showDebugInfo">
-                                <label class="form-check-label small" for="showDebugInfo">
-                                    Debug-Details anzeigen
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Marker detection -->
-                <div class="card mb-3 shadow-sm">
-                    <div class="card-header bg-info text-dark fw-semibold d-flex justify-content-between align-items-center">
-                        <span>Eckmarker-Erkennung</span>
-                        <span id="markerStatusBadge" class="badge bg-secondary">–</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="requireMarkers" checked>
-                            <label class="form-check-label small fw-semibold" for="requireMarkers">
-                                Perspektivkorrektur aktiv
-                            </label>
-                        </div>
-                        <div class="form-text small mt-1">
-                            Benötigt 4 schwarze gefüllte Marker (Kreis oder Quadrat) nahe den Ecken des Formulars.
-                            Deaktivieren für ältere Templates ohne Marker.
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Step 4: Analyse & Export -->
-                <div class="card mb-3 shadow-sm">
-                    <div class="card-header bg-success text-white fw-semibold">
-                        4. Analyse &amp; Export
-                    </div>
-                    <div class="card-body d-grid gap-2">
-                        <button id="analyzeBtn" class="btn btn-success" disabled>
-                            &#9654; Analyse starten
-                        </button>
-                        <button id="exportJsonBtn" class="btn btn-outline-primary" disabled>
-                            &#8595; JSON exportieren
-                        </button>
-                        <button id="exportCsvBtn" class="btn btn-outline-secondary" disabled>
-                            &#8595; CSV exportieren
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Page Navigation -->
-                <div class="card mb-3 shadow-sm" id="pageNav" style="display:none;">
-                    <div class="card-header fw-semibold">Seitennavigation</div>
-                    <div class="card-body d-flex align-items-center gap-2 py-2">
-                        <button id="prevPage" class="btn btn-sm btn-outline-secondary">&laquo; Zurück</button>
-                        <span id="pageInfo" class="flex-grow-1 text-center small">Seite 1 / 1</span>
-                        <button id="nextPage" class="btn btn-sm btn-outline-secondary">Weiter &raquo;</button>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- ===== CENTER PANEL: PDF Canvas ===== -->
-            <div class="col-xl-6 col-lg-5">
-                <div class="card shadow-sm h-100">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span class="fw-semibold">PDF-Vorschau
-                            <small id="normalizedViewLabel" class="text-info fw-normal ms-2" style="display:none;"
-                                   title="Zeigt das perspektivkorrigierte Bild">
-                                &#10005; Normalisiert
-                            </small>
-                        </span>
-                        <div>
-                            <span class="badge bg-success me-1" id="checkedCount">0 angekreuzt</span>
-                            <span class="badge bg-danger" id="uncheckedCount">0 leer</span>
-                        </div>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="canvas-wrapper" id="canvasWrapper">
-                            <!-- Empty state -->
-                            <div id="emptyState" class="empty-state text-center p-5 text-muted">
-                                <div class="display-3 mb-3">&#128196;</div>
-                                <h5>Noch keine PDF geladen</h5>
-                                <p class="small">
-                                    Laden Sie eine PDF-Datei und ein Template,<br>
-                                    um die Checkbox-Erkennung zu starten.
-                                </p>
-                            </div>
-                            <!-- Canvas container (overlapping canvases) -->
-                            <div class="canvas-container" id="canvasContainer" style="display:none;">
-                                <canvas id="pdfCanvas"></canvas>
-                                <canvas id="overlayCanvas"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ===== RIGHT PANEL: Results ===== -->
-            <div class="col-xl-3 col-lg-3">
-                <div class="card shadow-sm mb-3">
-                    <div class="card-header fw-semibold">Ergebnis (JSON)</div>
-                    <div class="card-body p-2">
-                        <pre id="jsonOutput" class="json-output mb-0"></pre>
-                    </div>
-                </div>
-
-                <!-- Debug details (hidden by default) -->
-                <div class="card shadow-sm" id="debugCard" style="display:none;">
-                    <div class="card-header fw-semibold">Debug-Details</div>
-                    <div class="card-body p-2">
-                        <div id="debugOutput" class="debug-output"></div>
-                    </div>
-                </div>
-            </div>
-
-        </div><!-- /row -->
-    </div><!-- /container -->
-
-    <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay" style="display:none;">
-        <div class="text-center text-white">
-            <div class="spinner-border spinner-border mb-3" role="status" aria-hidden="true"></div>
-            <div id="loadingMessage" class="fw-semibold fs-5">Lädt...</div>
-        </div>
+    <div>
+      <div class="logo-title">PSO OMR Tool</div>
+      <div class="logo-sub">Local-First Optical Mark Recognition</div>
     </div>
 
-    <!-- Toast Container -->
-    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer"
-         style="z-index: 11000;"></div>
+    <hr class="my-0" />
 
-    <!-- ==============================================
-         SCRIPTS
-         Order is critical:
-         1. OpenCV Module config (before opencv.js)
-         2. PDF.js
-         3. OpenCV.js (async WASM init)
-         4. Bootstrap
-         5. Application modules (in dependency order)
-    ================================================ -->
+    <!-- PDF Upload -->
+    <div>
+      <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;">PDF Document</label>
+      <div class="upload-drop" id="upload-drop" onclick="document.getElementById('pdf-input').click()">
+        <div class="upload-icon">📄</div>
+        <div class="upload-text">Click or drag &amp; drop a PDF</div>
+        <input type="file" id="pdf-input" accept="application/pdf" />
+      </div>
+      <div id="pdf-filename" class="upload-filename mt-1" style="display:none;"></div>
+    </div>
 
-    <!-- OpenCV Module config MUST be defined before opencv.js is loaded -->
-    <script>
-        /**
-         * OpenCV.js WASM Runtime initialization hook.
-         * This must be defined as a global before opencv.js loads.
-         * When the WASM module finishes initializing, it calls onRuntimeInitialized,
-         * which we use to signal that cv is ready.
-         */
-        var Module = {
-            onRuntimeInitialized: function () {
-                document.dispatchEvent(new CustomEvent('opencv-ready'));
-            }
-        };
-    </script>
+    <!-- Template -->
+    <div>
+      <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;">Template</label>
+      <select class="form-select form-select-sm" id="template-select">
+        <option value="">— Select built-in template —</option>
+        <option value="template">template.json</option>
+        <option value="phqd">phqd.json</option>
+      </select>
+      <div class="mt-1" style="font-size:0.75rem; color:#6c757d;">or upload custom:</div>
+      <input type="file" class="form-control form-control-sm mt-1" id="template-input" accept="application/json" />
+      <div id="template-filename" class="upload-filename mt-1" style="display:none;"></div>
+    </div>
 
-    <script src="libs/pdf.min.js"></script>
-    <script src="libs/opencv.js"></script>
-    <script src="libs/bootstrap.bundle.min.js"></script>
+    <!-- Options -->
+    <div>
+      <label class="form-label fw-semibold mb-1" style="font-size:0.85rem;">Options</label>
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="debug-toggle" />
+        <label class="form-check-label" style="font-size:0.82rem;" for="debug-toggle">Debug Overlay</label>
+      </div>
+      <div class="form-check form-switch mt-1">
+        <input class="form-check-input" type="checkbox" id="calibrate-toggle" />
+        <label class="form-check-label" style="font-size:0.82rem;" for="calibrate-toggle">Baseline Calibration</label>
+      </div>
+    </div>
 
-    <!-- Application modules -->
-    <script src="js/template-manager.js"></script>
-    <script src="js/pdf-handler.js"></script>
-    <script src="js/image-processing.js"></script>
-    <script src="js/marker-detector.js"></script>
-    <script src="js/perspective-corrector.js"></script>
-    <script src="js/checkbox-detector.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/app.js"></script>
+    <!-- Actions -->
+    <div class="d-grid gap-2">
+      <button class="btn btn-primary btn-sm" id="process-btn" disabled>
+        <span id="process-btn-text">Process PDF</span>
+      </button>
+      <button class="btn btn-outline-success btn-sm" id="export-btn" disabled>Export JSON</button>
+      <button class="btn btn-outline-secondary btn-sm" id="reset-btn">Reset</button>
+    </div>
 
+    <!-- Progress -->
+    <div id="progress-bar-wrap">
+      <div class="d-flex justify-content-between mb-1">
+        <span style="font-size:0.75rem;" id="progress-label">Processing…</span>
+        <span style="font-size:0.75rem;" id="progress-pct">0%</span>
+      </div>
+      <div class="progress" style="height:6px;">
+        <div class="progress-bar progress-bar-striped progress-bar-animated"
+             id="progress-bar" role="progressbar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Alerts -->
+    <div id="error-alert" class="alert alert-danger py-2 px-3 mb-0" style="font-size:0.8rem;"></div>
+    <div id="warning-alert" class="alert alert-warning py-2 px-3 mb-0" style="font-size:0.8rem;"></div>
+
+    <div class="mt-auto" style="font-size:0.7rem; color:#adb5bd;">
+      Runs 100% offline in your browser. No data is sent anywhere.
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════ MAIN ═══════════════════════════════ -->
+  <div id="main-area">
+
+    <!-- Canvas Tabs -->
+    <div class="card shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <ul class="nav nav-tabs card-header-tabs" id="canvas-tabs">
+          <li class="nav-item">
+            <button class="nav-link active" data-tab="original">Original Scan</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-tab="normalized">Normalized</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-tab="debug">Debug View</button>
+          </li>
+        </ul>
+        <span id="canvas-page-info" class="text-muted" style="font-size:0.75rem;"></span>
+      </div>
+      <div class="card-body p-2">
+        <div class="canvas-container" id="canvas-container">
+          <canvas id="canvas-original" style="display:none;"></canvas>
+          <canvas id="canvas-normalized" style="display:none;"></canvas>
+          <canvas id="canvas-debug" style="display:none;"></canvas>
+          <div id="canvas-placeholder" class="d-flex align-items-center justify-content-center w-100"
+               style="height:320px; color:#6c757d; font-size:0.9rem;">
+            Upload a PDF to begin
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Section -->
+    <div id="results-section" class="card shadow-sm">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold" style="font-size:0.9rem;">Results</span>
+        <span id="results-summary" class="text-muted" style="font-size:0.78rem;"></span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" id="results-table">
+            <thead class="table-light">
+              <tr>
+                <th style="font-size:0.78rem; width:35%;">Field ID</th>
+                <th style="font-size:0.78rem; width:10%;">Page</th>
+                <th style="font-size:0.78rem; width:15%;">State</th>
+                <th style="font-size:0.78rem; width:20%;">Confidence</th>
+                <th style="font-size:0.78rem; width:20%;">Ratio</th>
+              </tr>
+            </thead>
+            <tbody id="results-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Debug Log Section -->
+    <div id="debug-section" class="card shadow-sm">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold" style="font-size:0.9rem;">Debug Log</span>
+        <button class="btn btn-outline-secondary btn-sm py-0" id="clear-log-btn" style="font-size:0.75rem;">Clear</button>
+      </div>
+      <div class="card-body p-2">
+        <div id="debug-log"></div>
+      </div>
+    </div>
+
+  </div><!-- /main-area -->
+</div><!-- /app-wrapper -->
+
+<!-- Scripts (IIFE globals — no ES6 modules, works on file://) -->
+<script src="libs/opencv.js"></script>
+<script src="libs/pdf.min.js"></script>
+<script src="libs/bootstrap.bundle.min.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/template-manager.js"></script>
+<script src="js/pdf-handler.js"></script>
+<script src="js/image-preprocessing.js"></script>
+<script src="js/marker-detector.js"></script>
+<script src="js/perspective-normalizer.js"></script>
+<script src="js/checkbox-detector.js"></script>
+<script src="js/debug-overlay.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
