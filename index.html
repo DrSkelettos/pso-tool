@@ -219,23 +219,49 @@
     <!-- Results Section -->
     <div id="results-section" class="card shadow-sm">
       <div class="card-header py-2 d-flex justify-content-between align-items-center">
-        <span class="fw-semibold" style="font-size:0.9rem;">Results</span>
-        <span id="results-summary" class="text-muted" style="font-size:0.78rem;"></span>
+        <ul class="nav nav-tabs card-header-tabs" id="results-tabs">
+          <li class="nav-item">
+            <button class="nav-link active" data-rtab="questions" id="results-tab-questions">Questions</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-rtab="scores" id="results-tab-scores">Scores</button>
+          </li>
+        </ul>
+        <span id="results-summary" class="text-muted ms-2" style="font-size:0.78rem;"></span>
       </div>
       <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0" id="results-table">
-            <thead class="table-light">
-              <tr>
-                <th style="font-size:0.78rem; width:20%;">Question</th>
-                <th style="font-size:0.78rem; width:12%;">Value</th>
-                <th style="font-size:0.78rem; width:18%;">Status</th>
-                <th style="font-size:0.78rem; width:30%;">Field / Note</th>
-                <th style="font-size:0.78rem; width:20%;">Ratio</th>
-              </tr>
-            </thead>
-            <tbody id="results-tbody"></tbody>
-          </table>
+        <!-- Questions panel -->
+        <div id="results-panel-questions">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="results-table">
+              <thead class="table-light">
+                <tr>
+                  <th style="font-size:0.78rem; width:20%;">Question</th>
+                  <th style="font-size:0.78rem; width:12%;">Value</th>
+                  <th style="font-size:0.78rem; width:18%;">Status</th>
+                  <th style="font-size:0.78rem; width:30%;">Field / Note</th>
+                  <th style="font-size:0.78rem; width:20%;">Ratio</th>
+                </tr>
+              </thead>
+              <tbody id="results-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <!-- Scores panel -->
+        <div id="results-panel-scores" style="display:none;">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="scores-table">
+              <thead class="table-light">
+                <tr>
+                  <th style="font-size:0.78rem; width:32%;">Score</th>
+                  <th style="font-size:0.78rem; width:14%;">Type</th>
+                  <th style="font-size:0.78rem; width:18%;">Result</th>
+                  <th style="font-size:0.78rem; width:36%;">Details</th>
+                </tr>
+              </thead>
+              <tbody id="scores-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -267,6 +293,7 @@
 <script src="js/checkbox-detector.js"></script>
 <script src="js/debug-overlay.js"></script>
 <script src="js/question-processor.js"></script>
+<script src="js/score-processor.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

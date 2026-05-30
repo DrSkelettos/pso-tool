@@ -2152,5 +2152,261 @@
         "15_a_1"
       ]
     }
-  ]
+  ],
+  "scores": {
+    "somatoformes_syndrom": {
+      "type": "count",
+      "items": [
+        "1_a",
+        "1_b",
+        "1_c",
+        "1_d",
+        "1_e",
+        "1_f",
+        "1_g",
+        "1_h",
+        "1_i",
+        "1_j",
+        "1_k",
+        "1_l",
+        "1_m"
+      ],
+      "condition": {
+        "operator": ">=",
+        "value": 3,
+        "answer_value": 2
+      }
+    },
+    "major_depressives_syndrom": {
+      "required_items": [
+        "2_a",
+        "2_b"
+      ],
+      "count_items": [
+        "2_a",
+        "2_b",
+        "2_c",
+        "2_d",
+        "2_e",
+        "2_f",
+        "2_g",
+        "2_h",
+        "2_i"
+      ],
+      "rule": {
+        "minimum_count": 5,
+        "count_if": {
+          "default": ">=2",
+          "2_i": ">=1"
+        },
+        "required_one_of": [
+          "2_a",
+          "2_b"
+        ]
+      }
+    },
+    "anderes_depressives_syndrom": {
+      "required_items": [
+        "2_a",
+        "2_b"
+      ],
+      "count_items": [
+        "2_a",
+        "2_b",
+        "2_c",
+        "2_d",
+        "2_e",
+        "2_f",
+        "2_g",
+        "2_h",
+        "2_i"
+      ],
+      "rule": {
+        "minimum_count": 2,
+        "maximum_count": 4,
+        "count_if": {
+          "default": ">=2",
+          "2_i": ">=1"
+        },
+        "required_one_of": [
+          "2_a",
+          "2_b"
+        ]
+      }
+    },
+    "paniksyndrom": {
+      "all_required": [
+        "3_a",
+        "3_b",
+        "3_c",
+        "3_d"
+      ],
+      "count_items": [
+        "4_a",
+        "4_b",
+        "4_c",
+        "4_d",
+        "4_e",
+        "4_f",
+        "4_g",
+        "4_h",
+        "4_i",
+        "4_j",
+        "4_k"
+      ],
+      "rule": {
+        "all_required_value": 1,
+        "minimum_count": 4,
+        "count_value": 1
+      }
+    },
+    "anderes_angstsyndrom": {
+      "required_item": "5_a",
+      "count_items": [
+        "5_b",
+        "5_c",
+        "5_d",
+        "5_e",
+        "5_f",
+        "5_g"
+      ],
+      "rule": {
+        "required_item_min": 2,
+        "minimum_count": 3,
+        "count_if": ">=2"
+      }
+    },
+    "bulimia_nervosa_verdacht": {
+      "all_required": [
+        "6_a",
+        "6_b",
+        "6_c",
+        "8"
+      ],
+      "required_value": 1
+    },
+    "binge_eating_verdacht": {
+      "required_yes": [
+        "6_a",
+        "6_b",
+        "6_c"
+      ],
+      "required_no": [
+        "8"
+      ]
+    },
+    "alkoholsyndrom": {
+      "items": [
+        "10_a",
+        "10_b",
+        "10_c",
+        "10_d",
+        "10_e"
+      ],
+      "condition": {
+        "minimum_count": 1,
+        "answer_value": 1
+      }
+    },
+    "depressivitaet": {
+      "items": [
+        "2_a",
+        "2_b",
+        "2_c",
+        "2_d",
+        "2_e",
+        "2_f",
+        "2_g",
+        "2_h",
+        "2_i"
+      ],
+      "range": [
+        0,
+        27
+      ],
+      "sum": true,
+      "severity": [
+        {
+          "min": 0,
+          "max": 4,
+          "label": "unauffällig"
+        },
+        {
+          "min": 5,
+          "max": 9,
+          "label": "mild/subdepressiv"
+        },
+        {
+          "min": 10,
+          "max": 14,
+          "label": "Major Depression: mittel"
+        },
+        {
+          "min": 15,
+          "max": 19,
+          "label": "Major Depression: ausgeprägt"
+        },
+        {
+          "min": 20,
+          "max": 27,
+          "label": "Major Depression: schwer"
+        }
+      ]
+    },
+    "somatische_symptome": {
+      "items": [
+        "1_a",
+        "1_b",
+        "1_c",
+        "1_d",
+        "1_e",
+        "1_f",
+        "1_g",
+        "1_h",
+        "1_i",
+        "1_j",
+        "1_k",
+        "1_l",
+        "1_m",
+        "2_c",
+        "2_d"
+      ],
+      "range": [
+        0,
+        30
+      ],
+      "special_scoring": {
+        "1_a-1_m": {
+          "0": 0,
+          "1": 1,
+          "2": 2
+        },
+        "2_c_2_d": {
+          "0": 0,
+          "1": 1,
+          "2": 2,
+          "3": 2
+        }
+      }
+    },
+    "stress": {
+      "items": [
+        "12_a",
+        "12_b",
+        "12_c",
+        "12_d",
+        "12_e",
+        "12_f",
+        "12_g",
+        "12_h",
+        "12_i",
+        "12_j"
+      ],
+      "range": [
+        0,
+        20
+      ],
+      "sum": true
+    }
+  }
 }

@@ -297,6 +297,84 @@ var UI = (function () {
     }
   }
 
+  // ─── Results Tab Switching ──────────────────────────────────────────────
+  function _showResultsTab(tab) {
+    var panels = { questions: 'results-panel-questions', scores: 'results-panel-scores' };
+    Object.keys(panels).forEach(function (key) {
+      var el = document.getElementById(panels[key]);
+      if (el) el.style.display = (key === tab) ? '' : 'none';
+    });
+    document.querySelectorAll('#results-tabs .nav-link').forEach(function (btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-rtab') === tab);
+    });
+  }
+
+  // ─── Score Results Table ──────────────────────────────────────────────────
+  function renderScoreResults(scoreResults) {
+    var tbody   = document.getElementById('scores-tbody');
+    var section = document.getElementById('results-section');
+    if (!tbody || !section) return;
+
+    tbody.innerHTML = '';
+
+    scoreResults.forEach(function (s) {
+      var tr = document.createElement('tr');
+
+      var typeLabel, resultCell, rowClass;
+
+      if (s.type === 'diagnostic') {
+        typeLabel = 'Diagnostic';
+        if (s.positive === null) {
+          resultCell = '<span class="badge badge-uncertain" style="font-size:0.72rem;">Unknown</span>';
+          rowClass   = 'result-row-uncertain';
+        } else if (s.positive) {
+          resultCell = '<span class="badge badge-checked" style="font-size:0.72rem;">Positive</span>';
+          rowClass   = 'result-row-checked';
+        } else {
+          resultCell = '<span class="badge" style="font-size:0.72rem;background:#6c757d;color:#fff;">Negative</span>';
+          rowClass   = '';
+        }
+      } else if (s.type === 'numeric') {
+        typeLabel  = 'Score';
+        rowClass   = '';
+        var rangeStr = s.range ? ' / ' + s.range[1] : '';
+        var valStr   = '<strong>' + s.sum + '</strong>' + rangeStr;
+        if (s.severity) {
+          valStr += ' &nbsp;<span class="badge" style="font-size:0.7rem;background:#0d6efd;">' +
+            escapeHtml(s.severity) + '</span>';
+        }
+        resultCell = valStr;
+      } else {
+        typeLabel  = 'Unknown';
+        resultCell = '—';
+        rowClass   = '';
+      }
+
+      if (s.hasUnanswered) {
+        rowClass = rowClass || 'result-row-uncertain';
+      }
+
+      tr.className = rowClass;
+
+      var noteHtml = s.note ? escapeHtml(s.note) : '—';
+      var warnIcon = s.hasUnanswered
+        ? ' <span title="Some questions were unanswered" style="color:#ffc107;">&#9888;</span>'
+        : '';
+
+      tr.innerHTML =
+        '<td style="font-size:0.8rem; font-weight:600;">' + escapeHtml(s.label) + warnIcon + '</td>' +
+        '<td style="font-size:0.75rem; color:#6c757d;">' + typeLabel + '</td>' +
+        '<td>' + resultCell + '</td>' +
+        '<td style="font-size:0.75rem; color:#495057;">' + noteHtml + '</td>';
+
+      tbody.appendChild(tr);
+    });
+
+    section.style.display = 'block';
+    // Auto-switch to scores tab when scores are rendered
+    _showResultsTab('scores');
+  }
+
   // ─── Debug Section ─────────────────────────────────────────────────────────
   function setDebugVisible(visible) {
     var el = document.getElementById('debug-section');
@@ -356,6 +434,11 @@ var UI = (function () {
     var tbody = document.getElementById('results-tbody');
     if (tbody) tbody.innerHTML = '';
 
+    var scoresTbody = document.getElementById('scores-tbody');
+    if (scoresTbody) scoresTbody.innerHTML = '';
+
+    // Reset results tabs to Questions
+    _showResultsTab('questions');
     if (_logEl) _logEl.innerHTML = '';
     setCanvasPageInfo('');
 
@@ -377,6 +460,13 @@ var UI = (function () {
   // ─── Init ──────────────────────────────────────────────────────────────────
   function init() {
     _logEl = document.getElementById('debug-log');
+
+    // Results tab switching
+    document.querySelectorAll('#results-tabs .nav-link').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        _showResultsTab(btn.getAttribute('data-rtab'));
+      });
+    });
 
     // Canvas tab switching
     document.querySelectorAll('#canvas-tabs .nav-link').forEach(function (btn) {
@@ -443,6 +533,7 @@ var UI = (function () {
     setPageNavigation: setPageNavigation,
     renderResults: renderResults,
     renderQuestionResults: renderQuestionResults,
+    renderScoreResults: renderScoreResults,
     setDebugVisible: setDebugVisible,
     isDebugEnabled: isDebugEnabled,
     isCalibrationEnabled: isCalibrationEnabled,

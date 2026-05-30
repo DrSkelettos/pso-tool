@@ -13,6 +13,7 @@ var App = (function () {
   var _pdfDoc             = null;
   var _allResults         = [];   // flat array of all field results across all pages
   var _questionResults    = [];   // processed question results (if template has questions)
+  var _scoreResults       = [];   // processed score results (if template has scores)
   var _cvReady            = false;
   var _pageCanvases       = [];   // per-page canvas snapshots: [{ original, normalized, debug }]
   var _currentDisplayPage = 1;
@@ -111,6 +112,7 @@ var App = (function () {
     _pdfDoc             = null;
     _allResults         = [];
     _questionResults    = [];
+    _scoreResults       = [];
     _pageCanvases       = [];
     _currentDisplayPage = 1;
 
@@ -142,8 +144,9 @@ var App = (function () {
       template: tmpl
         ? { pageWidth: tmpl.pageWidth, pageHeight: tmpl.pageHeight }
         : null,
+      scores:    _scoreResults.length    > 0 ? _scoreResults    : undefined,
       questions: _questionResults.length > 0 ? _questionResults : undefined,
-      fields: _allResults
+      fields:    _allResults
     };
 
     var blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
@@ -203,9 +206,20 @@ var App = (function () {
         if (tmpl && Array.isArray(tmpl.questions) && tmpl.questions.length > 0) {
           _questionResults = QuestionProcessor.processQuestions(_allResults, tmpl.questions);
           UI.renderQuestionResults(_questionResults);
-          UI.log('═══ Processing complete — ' + _allResults.length + ' field(s), ' + _questionResults.length + ' question(s) ═══', 'ok');
+
+          // Process scores if the template defines them
+          if (tmpl.scores && typeof tmpl.scores === 'object') {
+            _scoreResults = ScoreProcessor.processScores(_questionResults, tmpl.scores);
+            UI.renderScoreResults(_scoreResults);
+            UI.log('═══ Processing complete — ' + _allResults.length + ' field(s), ' +
+                   _questionResults.length + ' question(s), ' + _scoreResults.length + ' score(s) ═══', 'ok');
+          } else {
+            _scoreResults = [];
+            UI.log('═══ Processing complete — ' + _allResults.length + ' field(s), ' + _questionResults.length + ' question(s) ═══', 'ok');
+          }
         } else {
           _questionResults = [];
+          _scoreResults    = [];
           UI.renderResults(_allResults);
           UI.log('═══ Processing complete — ' + _allResults.length + ' field(s) analyzed ═══', 'ok');
         }
