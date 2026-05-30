@@ -9,10 +9,13 @@ var App = (function () {
   'use strict';
 
   // ─── State ─────────────────────────────────────────────────────────────────
-  var _pdfFile      = null;
-  var _pdfDoc       = null;
-  var _allResults   = [];   // flat array of all field results across all pages
-  var _cvReady      = false;
+  var _pdfFile            = null;
+  var _pdfDoc             = null;
+  var _allResults         = [];   // flat array of all field results across all pages
+  var _questionResults    = [];   // processed question results (if template has questions)
+  var _cvReady            = false;
+  var _pageCanvases       = [];   // per-page canvas snapshots: [{ original, normalized, debug }]
+  var _currentDisplayPage = 1;
 
   // ─── OpenCV readiness ─────────────────────────────────────────────────────
   // opencv.js calls this global when it has finished loading
@@ -91,11 +94,25 @@ var App = (function () {
       .catch(function (err) { UI.showError(err.message); });
   }
 
+  // ─── Page Navigation ─────────────────────────────────────────────────────
+  function _showPage(pageNum) {
+    var pc = _pageCanvases[pageNum - 1];
+    if (!pc) return;
+    _currentDisplayPage = pageNum;
+    UI.setCanvasContent('original',   pc.original);
+    UI.setCanvasContent('normalized', pc.normalized);
+    if (pc.debug) UI.setCanvasContent('debug', pc.debug);
+    UI.setPageNavigation(pageNum, _pageCanvases.length);
+  }
+
   // ─── Reset ────────────────────────────────────────────────────────────────
   function _onReset() {
-    _pdfFile    = null;
-    _pdfDoc     = null;
-    _allResults = [];
+    _pdfFile            = null;
+    _pdfDoc             = null;
+    _allResults         = [];
+    _questionResults    = [];
+    _pageCanvases       = [];
+    _currentDisplayPage = 1;
 
     var pdfInput      = document.getElementById('pdf-input');
     var templateInput = document.getElementById('template-input');
@@ -119,12 +136,14 @@ var App = (function () {
   function _onExport() {
     if (!_allResults || _allResults.length === 0) return;
 
+    var tmpl = TemplateManager.getTemplate();
     var output = {
       exportedAt: new Date().toISOString(),
-      template: TemplateManager.getTemplate()
-        ? { pageWidth: TemplateManager.getTemplate().pageWidth, pageHeight: TemplateManager.getTemplate().pageHeight }
+      template: tmpl
+        ? { pageWidth: tmpl.pageWidth, pageHeight: tmpl.pageHeight }
         : null,
-      results: _allResults
+      questions: _questionResults.length > 0 ? _questionResults : undefined,
+      fields: _allResults
     };
 
     var blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
@@ -146,7 +165,8 @@ var App = (function () {
     UI.clearAlerts();
     UI.setProcessing(true);
     UI.setExportEnabled(false);
-    _allResults = [];
+    _allResults   = [];
+    _pageCanvases = [];
 
     UI.log('═══ Starting OMR processing ═══', 'info');
 
@@ -177,8 +197,22 @@ var App = (function () {
         UI.hideProgress();
         UI.setProcessing(false);
         UI.setExportEnabled(true);
-        UI.renderResults(_allResults);
-        UI.log('═══ Processing complete — ' + _allResults.length + ' field(s) analyzed ═══', 'ok');
+
+        // Process questions if the template defines them
+        var tmpl = TemplateManager.getTemplate();
+        if (tmpl && Array.isArray(tmpl.questions) && tmpl.questions.length > 0) {
+          _questionResults = QuestionProcessor.processQuestions(_allResults, tmpl.questions);
+          UI.renderQuestionResults(_questionResults);
+          UI.log('═══ Processing complete — ' + _allResults.length + ' field(s), ' + _questionResults.length + ' question(s) ═══', 'ok');
+        } else {
+          _questionResults = [];
+          UI.renderResults(_allResults);
+          UI.log('═══ Processing complete — ' + _allResults.length + ' field(s) analyzed ═══', 'ok');
+        }
+        // Show page 1 and set up navigation if multi-page
+        if (_pageCanvases.length > 0) {
+          _showPage(1);
+        }
       })
       .catch(function (err) {
         UI.hideProgress();
@@ -207,6 +241,7 @@ var App = (function () {
     var normResult      = null;
     var markers         = null;
     var originalCanvas  = null;
+    var _pageCacheEntry = { original: null, normalized: null, debug: null };
 
     return PDFHandler.renderPage(pdfDoc, pageNum)
       .then(function (canvas) {
@@ -243,6 +278,8 @@ var App = (function () {
 
         // Show normalized canvas
         UI.setCanvasContent('normalized', normResult.canvas);
+        _pageCacheEntry.normalized = normResult.canvas;
+        _pageCacheEntry.original   = originalCanvas;
 
         UI.showProgress('Page ' + pageNum + ': analyzing checkboxes…', progressBase + progressStep * 0.75);
 
@@ -271,8 +308,11 @@ var App = (function () {
 
           // Also annotate original scan tab
           UI.setCanvasContent('original', debugOrigCanvas);
+          _pageCacheEntry.debug    = debugNormCanvas;
+          _pageCacheEntry.original = debugOrigCanvas;
         }
 
+        _pageCanvases[pageNum - 1] = _pageCacheEntry;
         UI.showProgress('Page ' + pageNum + ': done', progressBase + progressStep);
       })
       .finally(function () {
@@ -317,6 +357,16 @@ var App = (function () {
 
     var resetBtn = document.getElementById('reset-btn');
     if (resetBtn) resetBtn.addEventListener('click', _onReset);
+
+    var pagePrevBtn = document.getElementById('page-prev-btn');
+    if (pagePrevBtn) pagePrevBtn.addEventListener('click', function () {
+      if (_currentDisplayPage > 1) _showPage(_currentDisplayPage - 1);
+    });
+
+    var pageNextBtn = document.getElementById('page-next-btn');
+    if (pageNextBtn) pageNextBtn.addEventListener('click', function () {
+      if (_currentDisplayPage < _pageCanvases.length) _showPage(_currentDisplayPage + 1);
+    });
 
     UI.log('App initialized. Select a PDF and a template to begin.', 'ok');
     _updateProcessButton();

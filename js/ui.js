@@ -120,12 +120,42 @@ var UI = (function () {
     if (el) el.textContent = text || '';
   }
 
-  // ─── Results Table ─────────────────────────────────────────────────────────
+  // ─── Page Navigation ─────────────────────────────────────────────────────
+  function setPageNavigation(currentPage, totalPages) {
+    var info    = document.getElementById('canvas-page-info');
+    var prevBtn = document.getElementById('page-prev-btn');
+    var nextBtn = document.getElementById('page-next-btn');
+
+    if (info) info.textContent = 'Page ' + currentPage + ' / ' + totalPages;
+
+    var showNav = totalPages > 1;
+    if (prevBtn) {
+      prevBtn.style.display = showNav ? '' : 'none';
+      prevBtn.disabled = currentPage <= 1;
+    }
+    if (nextBtn) {
+      nextBtn.style.display = showNav ? '' : 'none';
+      nextBtn.disabled = currentPage >= totalPages;
+    }
+  }
+
+  // ─── Results Table (field-level, kept for fallback) ───────────────────────
   function renderResults(results) {
     var section = document.getElementById('results-section');
+    var thead   = document.querySelector('#results-table thead tr');
     var tbody   = document.getElementById('results-tbody');
     var summary = document.getElementById('results-summary');
     if (!section || !tbody) return;
+
+    // Restore field-level column headers
+    if (thead) {
+      thead.innerHTML =
+        '<th style="font-size:0.78rem; width:35%;">Field ID</th>' +
+        '<th style="font-size:0.78rem; width:10%;">Page</th>' +
+        '<th style="font-size:0.78rem; width:15%;">State</th>' +
+        '<th style="font-size:0.78rem; width:20%;">Confidence</th>' +
+        '<th style="font-size:0.78rem; width:20%;">Ratio</th>';
+    }
 
     tbody.innerHTML = '';
 
@@ -184,6 +214,86 @@ var UI = (function () {
         checkedCount + ' checked, ' +
         uncertainCount + ' uncertain, ' +
         emptyCount + ' empty';
+    }
+  }
+
+  // ─── Question Results Table ────────────────────────────────────────────────
+  function renderQuestionResults(questionResults) {
+    var section = document.getElementById('results-section');
+    var thead   = document.querySelector('#results-table thead tr');
+    var tbody   = document.getElementById('results-tbody');
+    var summary = document.getElementById('results-summary');
+    if (!section || !tbody) return;
+
+    // Update column headers for question view
+    if (thead) {
+      thead.innerHTML =
+        '<th style="font-size:0.78rem; width:20%;">Question</th>' +
+        '<th style="font-size:0.78rem; width:12%;">Value</th>' +
+        '<th style="font-size:0.78rem; width:18%;">Status</th>' +
+        '<th style="font-size:0.78rem; width:30%;">Field / Note</th>' +
+        '<th style="font-size:0.78rem; width:20%;">Ratio</th>';
+    }
+
+    tbody.innerHTML = '';
+
+    var answeredCount    = 0;
+    var uncertainCount   = 0;
+    var unansweredCount  = 0;
+
+    questionResults.forEach(function (q) {
+      var tr = document.createElement('tr');
+
+      var state, badgeClass, rowClass, note;
+
+      if (q.status === 'not_answered') {
+        state      = 'Not Answered';
+        badgeClass = 'badge-empty';
+        rowClass   = 'result-row-empty';
+        note       = '—';
+        unansweredCount++;
+      } else if (q.status === 'uncertain') {
+        state      = 'Uncertain';
+        badgeClass = 'badge-uncertain';
+        rowClass   = 'result-row-uncertain';
+        note       = escapeHtml(q.field || '');
+        if (q.multipleChecked) note += ' <span class="text-warning" title="Multiple fields were checked">(multi)</span>';
+        uncertainCount++;
+      } else {
+        state      = 'Answered';
+        badgeClass = 'badge-checked';
+        rowClass   = 'result-row-checked';
+        note       = escapeHtml(q.field || '');
+        if (q.multipleChecked) note += ' <span class="text-warning" title="Multiple fields were checked">(multi)</span>';
+        answeredCount++;
+      }
+
+      tr.className = rowClass;
+
+      var ratioStr = (q.ratio !== null && q.ratio !== undefined)
+        ? (q.ratio * 100).toFixed(1) + '%'
+        : '—';
+
+      tr.innerHTML =
+        '<td style="font-size:0.78rem; font-family:monospace;">' + escapeHtml(q.id) + '</td>' +
+        '<td style="font-size:0.78rem; font-weight:600;">' +
+          (q.value !== null && q.value !== undefined ? q.value : '—') +
+        '</td>' +
+        '<td><span class="badge ' + badgeClass + '" style="font-size:0.72rem;">' + state + '</span></td>' +
+        '<td style="font-size:0.75rem; font-family:monospace;">' + note + '</td>' +
+        '<td style="font-size:0.78rem;">' + ratioStr + '</td>';
+
+      tbody.appendChild(tr);
+    });
+
+    section.style.display = 'block';
+
+    if (summary) {
+      summary.textContent =
+        questionResults.length + ' questions — ' +
+        answeredCount + ' answered, ' +
+        uncertainCount + ' uncertain, ' +
+        unansweredCount + ' not answered';
     }
   }
 
@@ -248,6 +358,11 @@ var UI = (function () {
 
     if (_logEl) _logEl.innerHTML = '';
     setCanvasPageInfo('');
+
+    var prevBtn = document.getElementById('page-prev-btn');
+    var nextBtn = document.getElementById('page-next-btn');
+    if (prevBtn) prevBtn.style.display = 'none';
+    if (nextBtn) nextBtn.style.display = 'none';
   }
 
   // ─── Utility ───────────────────────────────────────────────────────────────
@@ -325,7 +440,9 @@ var UI = (function () {
     clearAlerts: clearAlerts,
     setCanvasContent: setCanvasContent,
     setCanvasPageInfo: setCanvasPageInfo,
+    setPageNavigation: setPageNavigation,
     renderResults: renderResults,
+    renderQuestionResults: renderQuestionResults,
     setDebugVisible: setDebugVisible,
     isDebugEnabled: isDebugEnabled,
     isCalibrationEnabled: isCalibrationEnabled,

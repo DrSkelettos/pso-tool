@@ -195,7 +195,13 @@
             <button class="nav-link" data-tab="debug">Debug View</button>
           </li>
         </ul>
-        <span id="canvas-page-info" class="text-muted" style="font-size:0.75rem;"></span>
+        <div class="d-flex align-items-center gap-1">
+          <button class="btn btn-outline-secondary btn-sm py-0 px-2" id="page-prev-btn"
+                  style="font-size:0.8rem; display:none;" title="Previous page">&#8249;</button>
+          <span id="canvas-page-info" class="text-muted" style="font-size:0.75rem; min-width:4.5rem; text-align:center;"></span>
+          <button class="btn btn-outline-secondary btn-sm py-0 px-2" id="page-next-btn"
+                  style="font-size:0.8rem; display:none;" title="Next page">&#8250;</button>
+        </div>
       </div>
       <div class="card-body p-2">
         <div class="canvas-container" id="canvas-container">
@@ -221,10 +227,10 @@
           <table class="table table-sm table-hover mb-0" id="results-table">
             <thead class="table-light">
               <tr>
-                <th style="font-size:0.78rem; width:35%;">Field ID</th>
-                <th style="font-size:0.78rem; width:10%;">Page</th>
-                <th style="font-size:0.78rem; width:15%;">State</th>
-                <th style="font-size:0.78rem; width:20%;">Confidence</th>
+                <th style="font-size:0.78rem; width:20%;">Question</th>
+                <th style="font-size:0.78rem; width:12%;">Value</th>
+                <th style="font-size:0.78rem; width:18%;">Status</th>
+                <th style="font-size:0.78rem; width:30%;">Field / Note</th>
                 <th style="font-size:0.78rem; width:20%;">Ratio</th>
               </tr>
             </thead>
@@ -260,6 +266,7 @@
 <script src="js/perspective-normalizer.js"></script>
 <script src="js/checkbox-detector.js"></script>
 <script src="js/debug-overlay.js"></script>
+<script src="js/question-processor.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

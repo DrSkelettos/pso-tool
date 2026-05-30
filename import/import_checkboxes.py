@@ -9,8 +9,8 @@ import json
 import os
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-PAGE        = 1
-QUESTION_ID = "2"
+PAGE        = 2
+QUESTION_ID = "3"
 COLOR       = (178, 0, 255)   # RGB target color
 WIDTH       = 36
 HEIGHT      = 36
@@ -42,25 +42,36 @@ def main():
         print("No matching pixels found.")
         return
 
-    # Group by y value → rows
+    # Group by y value → rows (with ±10 px tolerance)
     rows_dict = {}
     for x, y in matches:
-        rows_dict.setdefault(y, []).append(x)
+        matched_key = None
+        for key in rows_dict:
+            if abs(y - key) <= 10:
+                matched_key = key
+                break
+        if matched_key is None:
+            rows_dict[y] = []
+            matched_key = y
+        rows_dict[matched_key].append((x, y))
 
-    # Sort rows by y, columns by x within each row
+    # Sort rows by representative y, columns by x within each row
     sorted_ys = sorted(rows_dict.keys())
 
     fields = []
-    for row_idx, y in enumerate(sorted_ys):
+    for row_idx, key_y in enumerate(sorted_ys):
         row_letter = ALPHABET[row_idx]
-        sorted_xs = sorted(rows_dict[y])
+        # Use the average y of all pixels in the row as the field y
+        pts = rows_dict[key_y]
+        avg_y = round(sum(p[1] for p in pts) / len(pts))
+        sorted_xs = sorted(p[0] for p in pts)
         for col_idx, x in enumerate(sorted_xs):
             field_id = f"{QUESTION_ID}_{row_letter}_{col_idx}"
             fields.append({
                 "id":     field_id,
                 "page":   PAGE,
                 "x":      x,
-                "y":      y,
+                "y":      avg_y,
                 "width":  WIDTH,
                 "height": HEIGHT,
             })
