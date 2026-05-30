@@ -9,13 +9,15 @@ import json
 import os
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-PAGE        = 2
-QUESTION_ID = "3"
+PAGE        = 3
+QUESTION_ID = "29"
 COLOR       = (178, 0, 255)   # RGB target color
 WIDTH       = 36
 HEIGHT      = 36
 # Optional: allow slight color deviation (0 = exact match)
 TOLERANCE   = 0
+# Use alphabetic row labels (1_a_0, 1_b_1 …); False → numeric (1_0, 1_1 …)
+ALPHA_ROWS  = False
 # ──────────────────────────────────────────────────────────────────────────────
 
 ALPHABET = "abcdefghijklmnopqrstuvwxyz"
@@ -59,6 +61,7 @@ def main():
     sorted_ys = sorted(rows_dict.keys())
 
     fields = []
+    field_counter = 0
     for row_idx, key_y in enumerate(sorted_ys):
         row_letter = ALPHABET[row_idx]
         # Use the average y of all pixels in the row as the field y
@@ -66,7 +69,12 @@ def main():
         avg_y = round(sum(p[1] for p in pts) / len(pts))
         sorted_xs = sorted(p[0] for p in pts)
         for col_idx, x in enumerate(sorted_xs):
-            field_id = f"{QUESTION_ID}_{row_letter}_{col_idx}"
+            if ALPHA_ROWS:
+                field_id = f"{QUESTION_ID}_{row_letter}_{col_idx}"
+            else:
+                question_num = int(QUESTION_ID) + row_idx
+                field_id = f"{question_num}_{col_idx}"
+            field_counter += 1
             fields.append({
                 "id":     field_id,
                 "page":   PAGE,
