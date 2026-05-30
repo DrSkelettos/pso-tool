@@ -1,0 +1,130 @@
+/* ── Bildschirm-Layout ─────────────────────────────────────────────── */
+body { background: #e8eaed; min-height: 100vh; }
+.form-card { max-width: 480px; margin: 60px auto; }
+.form-card-header { font-size: 1.05rem; }
+
+/* Toolbar über der Seite */
+#report-toolbar {
+  max-width: 794px;
+  margin: 20px auto 8px;
+  display: none;
+}
+
+/* ── A4-Seite ────────────────────────────────────────────────────── */
+.a4-wrap {
+  display: none;
+  max-width: 794px;   /* 210mm @ 96 dpi */
+  margin: 0 auto 40px;
+}
+.a4-page {
+  width: 794px;
+  min-height: 1123px; /* 297mm @ 96 dpi */
+  background: #fff;
+  box-shadow: 0 2px 16px rgba(0,0,0,.18);
+  padding: 50px 60px 60px;
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10pt;
+  color: #000;
+}
+
+/* Kopfbereich */
+.rpt-header { text-align: center; margin-bottom: 18px; }
+.rpt-header h1 { font-size: 14pt; font-weight: bold; margin: 0 0 2px; }
+.rpt-header .subtitle { font-size: 10pt; margin: 0; }
+
+/* Patientenzeile */
+.rpt-patient {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid #000;
+  padding-bottom: 4px;
+  margin-bottom: 22px;
+  font-size: 9.5pt;
+}
+.rpt-patient .label { font-weight: bold; margin-right: 4px; }
+
+/* Abschnittsüberschriften */
+.rpt-section-title {
+  text-align: center;
+  font-size: 13pt;
+  font-weight: bold;
+  border-bottom: 2.5px solid #000;
+  padding: 4px 0;
+  margin: 22px 0 10px;
+}
+
+/* Tabellen */
+.rpt-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 6px;
+  font-size: 9.5pt;
+}
+.rpt-table th {
+  background: #555;
+  color: #fff;
+  font-weight: bold;
+  text-align: center;
+  padding: 5px 8px;
+  border: 1px solid #333;
+}
+.rpt-table td {
+  border: 1px solid #bbb;
+  padding: 5px 10px;
+  vertical-align: middle;
+}
+.rpt-table td.label-cell { font-weight: bold; }
+.rpt-table td.value-cell { text-align: center; }
+.rpt-table tr.legend-row td {
+  border-top: none;
+  padding: 2px 10px 6px;
+  font-size: 7.5pt;
+  color: #555;
+  font-style: italic;
+  text-align: center;
+  border-left: 1px solid #bbb;
+  border-right: 1px solid #bbb;
+  border-bottom: 1px solid #bbb;
+}
+.rpt-table td.scale-cell {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 8pt;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+/* Positiv-Zelle: gepunktetes Muster (wie im Original-Auswertungsbogen) */
+.rpt-cell-positive {
+  background-image: radial-gradient(circle, #888 1px, transparent 1px);
+  background-size: 5px 5px;
+  font-weight: bold;
+}
+
+/* Fortschrittsbalken innerhalb der A4-Seite */
+.a4-page .progress {
+  height: 14px;
+  border-radius: 2px;
+  background-color: #ddd;
+}
+.a4-page .progress-bar {
+  background-color: #555;
+}
+
+/* Fußnoten */
+.rpt-footnote {
+  font-size: 7.5pt;
+  color: #333;
+  font-style: italic;
+  margin-top: 4px;
+}
+
+/* ── Druck ───────────────────────────────────────────────────────── */
+@media print {
+  body        { background: #fff; }
+  .no-print   { display: none !important; }
+  #report-toolbar { display: none !important; }
+  .a4-wrap    { max-width: 100%; margin: 0; }
+  .a4-page    { box-shadow: none; width: 100%; padding: 0; min-height: 0; }
+  @page       { size: A4 portrait; margin: 15mm 20mm; }
+}
