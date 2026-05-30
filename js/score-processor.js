@@ -412,6 +412,41 @@ var ScoreProcessor = (function () {
     };
   }
 
+  /**
+   * Single-item threshold check.
+   * { item: "2_i", condition: ">=1" }
+   */
+  function _processSingleItem(id, def, lookup) {
+    var v        = _val(lookup, def.item);
+    var positive = v !== null && _test(v, def.condition);
+    return {
+      id:            id,
+      label:         _label(id),
+      type:          'diagnostic',
+      positive:      v !== null ? positive : null,
+      hasUnanswered: v === null,
+      note:          v !== null ? String(v) : 'not answered'
+    };
+  }
+
+  /**
+   * Single-item value-to-label mapping.
+   * { item: "11", value_labels: { "0": "überhaupt nicht", ... } }
+   */
+  function _processValueLabel(id, def, lookup) {
+    var v    = _val(lookup, def.item);
+    var text = v !== null ? (def.value_labels[String(v)] || String(v)) : null;
+    return {
+      id:            id,
+      label:         _label(id),
+      type:          'value_label',
+      positive:      null,
+      valueLabel:    text,
+      hasUnanswered: v === null,
+      note:          text || 'not answered'
+    };
+  }
+
   // ─── Dispatcher ──────────────────────────────────────────────────────────
 
   function _dispatch(id, def, lookup) {
@@ -427,6 +462,8 @@ var ScoreProcessor = (function () {
     if (def.required_yes && def.required_no)                            return _processBinge(id, def, lookup);
     if (def.items && def.condition && def.condition.minimum_count !== undefined)
                                                                          return _processThreshold(id, def, lookup);
+    if (def.item && def.value_labels)                                    return _processValueLabel(id, def, lookup);
+    if (def.item && def.condition)                                       return _processSingleItem(id, def, lookup);
     return { id: id, label: _label(id), type: 'unknown', positive: null, hasUnanswered: false, note: 'Unrecognized rule structure' };
   }
 

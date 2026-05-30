@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHQ-D Auswertung</title>
+  <link rel="stylesheet" href="libs/bootstrap.min.css">
+  <style>
+    /* ── Bildschirm-Layout ─────────────────────────────────────────────── */
+    body { background: #e8eaed; min-height: 100vh; }
+    .form-card { max-width: 480px; margin: 60px auto; }
+
+    /* Toolbar über der Seite */
+    #report-toolbar {
+      max-width: 794px;
+      margin: 20px auto 8px;
+      display: none;
+    }
+
+    /* ── A4-Seite ────────────────────────────────────────────────────── */
+    .a4-wrap {
+      display: none;
+      max-width: 794px;   /* 210mm @ 96 dpi */
+      margin: 0 auto 40px;
+    }
+    .a4-page {
+      width: 794px;
+      min-height: 1123px; /* 297mm @ 96 dpi */
+      background: #fff;
+      box-shadow: 0 2px 16px rgba(0,0,0,.18);
+      padding: 50px 60px 60px;
+      box-sizing: border-box;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10pt;
+      color: #000;
+    }
+
+    /* Kopfbereich */
+    .rpt-header { text-align: center; margin-bottom: 18px; }
+    .rpt-header h1 { font-size: 14pt; font-weight: bold; margin: 0 0 2px; }
+    .rpt-header .subtitle { font-size: 10pt; margin: 0; }
+
+    /* Patientenzeile */
+    .rpt-patient {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid #000;
+      padding-bottom: 4px;
+      margin-bottom: 22px;
+      font-size: 9.5pt;
+    }
+    .rpt-patient .label { font-weight: bold; margin-right: 4px; }
+
+    /* Abschnittsüberschriften */
+    .rpt-section-title {
+      text-align: center;
+      font-size: 13pt;
+      font-weight: bold;
+      border-bottom: 2.5px solid #000;
+      padding: 4px 0;
+      margin: 22px 0 10px;
+    }
+
+    /* Tabellen */
+    .rpt-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 6px;
+      font-size: 9.5pt;
+    }
+    .rpt-table th {
+      background: #555;
+      color: #fff;
+      font-weight: bold;
+      text-align: center;
+      padding: 5px 8px;
+      border: 1px solid #333;
+    }
+    .rpt-table td {
+      border: 1px solid #bbb;
+      padding: 5px 10px;
+      vertical-align: middle;
+    }
+    .rpt-table td.label-cell { font-weight: bold; }
+    .rpt-table td.value-cell { text-align: center; }
+    .rpt-table tr.legend-row td {
+      border-top: none;
+      padding: 2px 10px 6px;
+      font-size: 7.5pt;
+      color: #555;
+      font-style: italic;
+      text-align: center;
+      border-left: 1px solid #bbb;
+      border-right: 1px solid #bbb;
+      border-bottom: 1px solid #bbb;
+    }
+    .rpt-table td.scale-cell {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 8pt;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    /* Positiv-Zelle: gepunktetes Muster (wie im Original-Auswertungsbogen) */
+    .rpt-cell-positive {
+      background-image: radial-gradient(circle, #888 1px, transparent 1px);
+      background-size: 5px 5px;
+      font-weight: bold;
+    }
+
+    /* Fortschrittsbalken innerhalb der A4-Seite */
+    .a4-page .progress {
+      height: 14px;
+      border-radius: 2px;
+      background-color: #ddd;
+    }
+    .a4-page .progress-bar {
+      background-color: #555;
+    }
+
+    /* Fußnoten */
+    .rpt-footnote {
+      font-size: 7.5pt;
+      color: #333;
+      font-style: italic;
+      margin-top: 4px;
+    }
+
+    /* ── Druck ───────────────────────────────────────────────────────── */
+    @media print {
+      body        { background: #fff; }
+      .no-print   { display: none !important; }
+      #report-toolbar { display: none !important; }
+      .a4-wrap    { max-width: 100%; margin: 0; }
+      .a4-page    { box-shadow: none; width: 100%; padding: 0; min-height: 0; }
+      @page       { size: A4 portrait; margin: 15mm 20mm; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container py-4">
+
+  <!-- ── Eingabe-Formular ─────────────────────────────────────────────────── -->
+  <div id="form-card" class="card shadow form-card">
+    <div class="card-header text-center fw-semibold py-3" style="font-size:1.05rem;">
+      PHQ-D Auswertung
+    </div>
+    <div class="card-body px-4 py-4">
+
+      <div class="mb-3">
+        <label class="form-label" for="inp-name">Name</label>
+        <input type="text" class="form-control" id="inp-name" placeholder="Vor- und Nachname">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="inp-dob">Geburtsdatum</label>
+        <input type="date" class="form-control" id="inp-dob">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="inp-date">Datum</label>
+        <input type="date" class="form-control" id="inp-date">
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" for="inp-pdf">PHQ-D Scan (PDF)</label>
+        <input type="file" class="form-control" id="inp-pdf" accept="application/pdf">
+      </div>
+
+      <div id="err-msg" class="alert alert-danger py-2 mb-3" style="display:none;"></div>
+
+      <div class="d-grid">
+        <button class="btn btn-primary btn-lg" id="btn-auswerten" disabled>
+          Auswerten
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Ergebnis-Toolbar ⛔ (kein Druck) ───────────────────────────────── -->
+  <div id="report-toolbar" class="no-print justify-content-between align-items-center">
+    <button class="btn btn-outline-secondary btn-sm" id="btn-new">&#8592; Neue Auswertung</button>
+    <button class="btn btn-primary btn-sm" onclick="window.print()">&#128438; Drucken / Speichern</button>
+  </div>
+
+  <!-- ── A4-Seite ──────────────────────────────────────────────────── -->
+  <div id="a4-wrap" class="a4-wrap">
+    <div class="a4-page" id="a4-page"></div>
+  </div>
+
+</div><!-- /container -->
+
+<!-- ── Bibliotheken ─────────────────────────────────────────────────────────── -->
+<script src="libs/pdf.min.js"></script>
+<script src="libs/bootstrap.bundle.min.js"></script>
+
+<!--
+  UI-Stub: muss VOR den Verarbeitungsmodulen geladen werden,
+  da diese UI.log() u. a. aufrufen.
+-->
+<script>
+var UI = (function () {
+  'use strict';
+  return {
+    log:                  function (msg, lvl) { if (lvl === 'error') console.error('[OMR]', msg); else console.log('[OMR]', msg); },
+    showProgress:         function () {},
+    hideProgress:         function () {},
+    showError:            function (m) { console.error('[OMR]', m); },
+    showWarning:          function (m) { console.warn('[OMR]', m); },
+    clearAlerts:          function () {},
+    isDebugEnabled:       function () { return false; },
+    isCalibrationEnabled: function () { return false; },
+    setCanvasContent:     function () {},
+    setCanvasPageInfo:    function () {},
+    showCanvasTab:        function () {},
+    setDebugVisible:      function () {},
+    setProcessing:        function () {},
+    setExportEnabled:     function () {},
+    setProcessEnabled:    function () {},
+    renderResults:        function () {},
+    renderQuestionResults:function () {},
+    renderScoreResults:   function () {},
+    resetUI:              function () {},
+    escapeHtml: function (s) {
+      return String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+  };
+})();
+</script>
+
+<!-- Verarbeitungsmodule -->
+<script src="libs/opencv.js"></script>
+<script src="js/template-manager.js"></script>
+<script src="templates/phqd.js"></script>
+<script src="js/pdf-handler.js"></script>
+<script src="js/image-preprocessing.js"></script>
+<script src="js/marker-detector.js"></script>
+<script src="js/perspective-normalizer.js"></script>
+<script src="js/checkbox-detector.js"></script>
+<script src="js/question-processor.js"></script>
+<script src="js/score-processor.js"></script>
+
+<!-- ── Anwendungslogik ──────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  // ── Zustand ──────────────────────────────────────────────────────────────
+  var _cvReady   = false;
+  var _tmplReady = false;
+  var _pdfFile   = null;
+
+  // ── DOM-Referenzen ───────────────────────────────────────────────────────
+  var _btnAuswerten = document.getElementById('btn-auswerten');
+  var _errEl        = document.getElementById('err-msg');
+
+  // ── Fortschrittssteuerung ─────────────────────────────────────────────────
+  // _progress: tracks cumulative steps. Call _initProgress(totalSteps) before
+  // the pipeline, then _step() after each completed sub-step.
+  var _progressTotal = 1;
+  var _progressDone  = 0;
+
+  function _initProgress(totalSteps) {
+    _progressTotal = totalSteps || 1;
+    _progressDone  = 0;
+    _setProgressBtn(0);
+  }
+
+  function _step() {
+    _progressDone = Math.min(_progressDone + 1, _progressTotal);
+    _setProgressBtn(Math.round(_progressDone / _progressTotal * 100));
+  }
+
+  function _setProgressBtn(pct) {
+    _btnAuswerten.textContent = pct < 100
+      ? 'Auswertung läuft (' + pct + ' %)'
+      : 'Auswertung läuft (100 %)';
+  }
+
+  // ── Hilfsfunktionen ──────────────────────────────────────────────────────
+  function _showError(msg) {
+    _errEl.textContent   = msg;
+    _errEl.style.display = 'block';
+  }
+
+  function _updateButton() {
+    _btnAuswerten.disabled = !(_cvReady && _tmplReady && _pdfFile);
+  }
+
+  function _esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function _fmtDate(iso) {
+    if (!iso) return '—';
+    var p = iso.split('-');
+    return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : iso;
+  }
+
+  // ── Datum vorausfüllen ───────────────────────────────────────────────────
+  (function () {
+    var today = new Date();
+    var yyyy  = today.getFullYear();
+    var mm    = String(today.getMonth() + 1).padStart(2, '0');
+    var dd    = String(today.getDate()).padStart(2, '0');
+    document.getElementById('inp-date').value = yyyy + '-' + mm + '-' + dd;
+  })();
+
+  // ── OpenCV-Bereitschaft ──────────────────────────────────────────────────
+  window.onOpenCvReady = function () {
+    _cvReady = true;
+    console.log('[OMR] OpenCV bereit');
+    _updateButton();
+  };
+
+  function _waitForOpenCV() {
+    if (typeof cv !== 'undefined' && cv.Mat) {
+      _cvReady = true;
+      _updateButton();
+    } else {
+      setTimeout(_waitForOpenCV, 200);
+    }
+  }
+
+  // ── Vorlage laden ────────────────────────────────────────────────────────
+  function _loadTemplate() {
+    _tmplReady = false;
+    try {
+      TemplateManager.loadFromObject(PHQD_TEMPLATE);
+      _tmplReady = true;
+      _updateButton();
+    } catch (err) {
+      _showError('Vorlage konnte nicht geladen werden: ' + err.message);
+    }
+  }
+
+  // ── Ereignis: PDF ausgewählt ─────────────────────────────────────────────
+  document.getElementById('inp-pdf').addEventListener('change', function (e) {
+    _pdfFile             = e.target.files && e.target.files[0];
+    _errEl.style.display = 'none';
+    _updateButton();
+  });
+
+  // ── Ereignis: Auswerten ──────────────────────────────────────────────────
+  _btnAuswerten.addEventListener('click', function () {
+    _btnAuswerten.disabled = true;
+    _errEl.style.display   = 'none';
+
+    _runPipeline()
+      .then(function (scoreResults) {
+        _displayResults(scoreResults);
+      })
+      .catch(function (err) {
+        _btnAuswerten.disabled    = false;
+        _btnAuswerten.textContent = 'Auswerten';
+        _showError('Fehler bei der Auswertung: ' + err.message);
+        console.error(err);
+      });
+  });
+
+  // ── Ereignis: Neue Auswertung ────────────────────────────────────────────
+  document.getElementById('btn-new').addEventListener('click', function () {
+    document.getElementById('a4-wrap').style.display        = 'none';
+    document.getElementById('report-toolbar').style.display = 'none';
+    document.getElementById('form-card').style.display      = '';
+    document.getElementById('inp-pdf').value                = '';
+    _btnAuswerten.textContent = 'Auswerten';
+    _btnAuswerten.disabled    = true;
+    _pdfFile = null;
+    TemplateManager.clear();
+    _loadTemplate();
+    _updateButton();
+  });
+
+  // ── Verarbeitungspipeline ────────────────────────────────────────────────
+  //
+  // Schritt-Gewichtungen (ergeben zusammen 1,0):
+  //   PDF laden          →  1 Schritt
+  //   Pro Seite          →  5 Schritte (render, preprocess, marker, normalize, analyze)
+  //   Fragen auswerten   →  1 Schritt
+  //   Scores berechnen   →  1 Schritt
+  //
+  // Gesamtschritte für N Seiten: 1 + 5·N + 2
+
+  function _runPipeline() {
+    var allResults = [];
+
+    // Compute total steps after we know page count
+    // (we don't know pagesToProc until after loadPDF, so init conservatively
+    //  and re-init inside the .then)
+    _initProgress(1); // placeholder — reset below
+
+    return PDFHandler.loadPDF(_pdfFile)
+      .then(function (pdfDoc) {
+        var totalPages  = pdfDoc.numPages;
+        var tmplPages   = TemplateManager.getPageCount();
+        var pagesToProc = Math.min(totalPages, tmplPages);
+
+        // Now we know the real total: 1 (load) + 5*N (pages) + 2 (post)
+        _initProgress(1 + pagesToProc * 5 + 2);
+        _step(); // PDF geladen
+
+        var chain = Promise.resolve();
+        for (var p = 1; p <= pagesToProc; p++) {
+          (function (pageNum) {
+            chain = chain.then(function () {
+              return _processPage(pdfDoc, pageNum, allResults);
+            });
+          })(p);
+        }
+        return chain;
+      })
+      .then(function () {
+        var tmpl     = TemplateManager.getTemplate();
+        var qResults = QuestionProcessor.processQuestions(allResults, tmpl.questions);
+        _step(); // Fragen ausgewertet
+
+        var sResults = ScoreProcessor.processScores(qResults, tmpl.scores);
+        _step(); // Scores berechnet
+
+        return sResults;
+      });
+  }
+
+  function _processPage(pdfDoc, pageNum, allResults) {
+    var fields = TemplateManager.getFieldsForPage(pageNum);
+    if (!fields.length) return Promise.resolve();
+
+    var preprocessMats = null;
+    var normResult     = null;
+
+    return PDFHandler.renderPage(pdfDoc, pageNum)
+      .then(function (canvas) {
+        _step(); // Seite gerendert
+
+        preprocessMats = ImagePreprocessor.preprocess(canvas);
+        _step(); // Vorverarbeitung
+
+        var markers = MarkerDetector.findMarkers(
+          preprocessMats.binary,
+          preprocessMats.binary.cols,
+          preprocessMats.binary.rows
+        );
+        _step(); // Marker erkannt
+
+        normResult = PerspectiveNormalizer.normalizeToCanvas(
+          preprocessMats.gray,
+          markers,
+          TemplateManager.getTemplate().pageWidth,
+          TemplateManager.getTemplate().pageHeight
+        );
+        _step(); // Perspektive korrigiert
+
+        var pageResults = CheckboxDetector.analyzeAll(normResult.normalized, fields, 0);
+        pageResults.forEach(function (r) { allResults.push(r); });
+        _step(); // Checkboxen analysiert
+      })
+      .finally(function () {
+        if (preprocessMats) ImagePreprocessor.cleanup(preprocessMats);
+        if (normResult) {
+          if (normResult.normalized && !normResult.normalized.isDeleted()) normResult.normalized.delete();
+          if (normResult.transform  && !normResult.transform.isDeleted())  normResult.transform.delete();
+        }
+      });
+  }
+
+  // ── Ergebnisanzeige (generischer Report-Renderer) ────────────────────────
+
+  // Build a lookup: score id → score result object
+  function _buildScoreLookup(scoreResults) {
+    var map = {};
+    scoreResults.forEach(function (s) { map[s.id] = s; });
+    return map;
+  }
+
+  // Highlight the matching range segment in a semicolon-separated legend string.
+  // Returns an HTML string with the active segment wrapped in <strong>.
+  function _highlightLegendRange(legend, sum) {
+    var parts = legend.split(';');
+    var html = parts.map(function (part) {
+      var p = part.trim();
+      var nums = p.match(/\d+/g);
+      var active = false;
+      if (nums && nums.length >= 2) {
+        var lo = parseInt(nums[nums.length - 2], 10);
+        var hi = parseInt(nums[nums.length - 1], 10);
+        active = sum >= lo && sum <= hi;
+      } else if (nums && nums.length === 1) {
+        if (/unter\s*\d+/i.test(p)) {
+          active = sum < parseInt(nums[0], 10);
+        } else {
+          active = sum >= parseInt(nums[0], 10);
+        }
+      }
+      return active ? '<strong>' + _esc(p) + '</strong>' : _esc(p);
+    });
+    return html.join('; ');
+  }
+
+  // Generate a text scale: "0 X--------- 30" for a numeric score
+  function _renderScale(sum, range) {
+    var min   = range[0];
+    var max   = range[1];
+    var chars = 38; // total dash positions
+    var pos   = Math.round((sum - min) / (max - min) * chars);
+    pos       = Math.max(0, Math.min(chars, pos));
+    var left  = pos > 0 ? new Array(pos).join('-') : '';
+    var right = pos < chars ? new Array(chars - pos).join('-') : '';
+    return min + ' ' + left + 'X' + right + ' ' + max;
+  }
+
+  function _displayResults(scoreResults) {
+    var name   = document.getElementById('inp-name').value.trim() || '—';
+    var dob    = document.getElementById('inp-dob').value;
+    var date   = document.getElementById('inp-date').value;
+    var tmpl   = TemplateManager.getTemplate();
+    var report = tmpl.report;
+    var lookup = _buildScoreLookup(scoreResults);
+    var page   = document.getElementById('a4-page');
+    page.innerHTML = '';
+
+    // ── Kopfbereich ───────────────────────────────────────────────────────
+    var hdr = document.createElement('div');
+    hdr.className = 'rpt-header';
+    hdr.innerHTML = '<h1>' + _esc(report.title) + '</h1>' +
+                    '<p class="subtitle">' + _esc(report.subtitle) + '</p>';
+    page.appendChild(hdr);
+
+    // ── Patientenzeile ────────────────────────────────────────────────────
+    var pat = document.createElement('div');
+    pat.className = 'rpt-patient';
+    pat.innerHTML =
+      '<span><span class="label">Name&nbsp;</span>' + _esc(name)    + '</span>' +
+      '<span><span class="label">Geburtsdatum&nbsp;</span>' + _fmtDate(dob)  + '</span>' +
+      '<span><span class="label">Datum&nbsp;</span>' + _fmtDate(date) + '</span>';
+    page.appendChild(pat);
+
+    // ── Abschnitte ────────────────────────────────────────────────────────
+    (report.sections || []).forEach(function (section) {
+
+      var sh = document.createElement('div');
+      sh.className   = 'rpt-section-title';
+      sh.textContent = section.title;
+      page.appendChild(sh);
+
+      var table = document.createElement('table');
+      table.className = 'rpt-table';
+
+      // Header row
+      var thead = document.createElement('thead');
+      var hrow  = document.createElement('tr');
+      (section.columns || []).forEach(function (col, i) {
+        var th = document.createElement('th');
+        th.textContent = col;
+        if (section.type === 'diagnostic') {
+          th.style.width = i === 0 ? '65%' : '35%';
+        } else {
+          th.style.width = i === 0 ? '45%' : i === 1 ? '12%' : '43%';
+        }
+        hrow.appendChild(th);
+      });
+      thead.appendChild(hrow);
+      table.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
+
+      (section.items || []).forEach(function (item) {
+        var score = lookup[item.score];
+        var tr    = document.createElement('tr');
+
+        if (section.type === 'diagnostic') {
+          var tdLabel = document.createElement('td');
+          tdLabel.className   = 'label-cell';
+          tdLabel.textContent = item.label;
+          tr.appendChild(tdLabel);
+
+          var tdResult = document.createElement('td');
+          tdResult.className = 'value-cell';
+          if (score && score.type === 'value_label') {
+            tdResult.textContent = score.valueLabel || '\u2014';
+          } else if (!score || score.positive === null) {
+            tdResult.textContent = 'unbekannt';
+          } else if (score.positive) {
+            tdResult.textContent = item.positive_text || 'vorhanden';
+            tdResult.classList.add('rpt-cell-positive');
+          } else {
+            tdResult.textContent = 'nicht vorhanden';
+          }
+          tr.appendChild(tdResult);
+          tbody.appendChild(tr);
+
+        } else if (section.type === 'numeric') {
+          var tdL = document.createElement('td');
+          tdL.className   = 'label-cell';
+          tdL.textContent = item.label;
+          tr.appendChild(tdL);
+
+          // Sum column: VALUE/MAX
+          var tdS = document.createElement('td');
+          tdS.className = 'value-cell';
+          if (score && score.sum !== undefined && score.range) {
+            tdS.textContent = score.sum + ' / ' + score.range[1];
+          } else {
+            tdS.textContent = score ? String(score.sum !== undefined ? score.sum : '—') : '—';
+          }
+          tr.appendChild(tdS);
+
+          // Bewertung column: Bootstrap progress bar
+          var tdB = document.createElement('td');
+          tdB.className = 'value-cell';
+          if (!score || score.sum === undefined || !score.range) {
+            tdB.textContent = '—';
+          } else {
+            var barMax = score.range[1];
+            var barVal = score.sum || 0;
+            var pct    = Math.round(Math.min(100, Math.max(0, barVal / barMax * 100)));
+            var prog   = document.createElement('div');
+            prog.className = 'progress';
+            var bar = document.createElement('div');
+            bar.className = 'progress-bar';
+            bar.style.width = pct + '%';
+            bar.setAttribute('role', 'progressbar');
+            bar.setAttribute('aria-valuenow', String(barVal));
+            bar.setAttribute('aria-valuemin', '0');
+            bar.setAttribute('aria-valuemax', String(barMax));
+            prog.appendChild(bar);
+            tdB.appendChild(prog);
+          }
+          tr.appendChild(tdB);
+          tbody.appendChild(tr);
+
+          // Legend row: bold the active segment for severity display
+          if (item.legend) {
+            var legRow = document.createElement('tr');
+            legRow.className = 'legend-row';
+            var legTd = document.createElement('td');
+            legTd.setAttribute('colspan', String(section.columns.length));
+            if (item.display === 'severity' && score && score.sum !== undefined) {
+              legTd.innerHTML = _highlightLegendRange(item.legend, score.sum);
+            } else {
+              legTd.textContent = item.legend;
+            }
+            legRow.appendChild(legTd);
+            tbody.appendChild(legRow);
+          }
+        }
+      });
+
+      table.appendChild(tbody);
+      page.appendChild(table);
+
+      (section.footnotes || []).forEach(function (fn) {
+        var p = document.createElement('p');
+        p.className   = 'rpt-footnote';
+        p.textContent = fn;
+        page.appendChild(p);
+      });
+    });
+
+    // ── Ansicht wechseln ──────────────────────────────────────────────────
+    document.getElementById('form-card').style.display      = 'none';
+    document.getElementById('a4-wrap').style.display        = 'block';
+    document.getElementById('report-toolbar').style.display = 'flex';
+  }
+
+  // ── Start ─────────────────────────────────────────────────────────────────
+  _loadTemplate();
+
+  if (typeof cv === 'undefined' || !cv.Mat) {
+    _waitForOpenCV();
+  } else {
+    _cvReady = true;
+    _updateButton();
+  }
+
+})();
+</script>
+
+</body>
+</html>

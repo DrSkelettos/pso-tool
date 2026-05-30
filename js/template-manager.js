@@ -120,10 +120,22 @@ var TemplateManager = (function () {
     _template = null;
   }
 
+  // ─── Load from plain object (e.g. embedded JS template) ───────────────────
+  function loadFromObject(obj) {
+    try {
+      validate(obj);
+      _template = obj;
+      UI.log('Template loaded from object (' + obj.fields.length + ' fields)', 'ok');
+    } catch (err) {
+      throw new Error('Template validation error: ' + err.message);
+    }
+  }
+
   // ─── Public API ────────────────────────────────────────────────────────────
   return {
     loadFromFile: loadFromFile,
     loadFromPath: loadFromPath,
+    loadFromObject: loadFromObject,
     getTemplate: getTemplate,
     getFieldsForPage: getFieldsForPage,
     getPageCount: getPageCount,
