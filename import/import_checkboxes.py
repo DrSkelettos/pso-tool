@@ -9,8 +9,8 @@ import json
 import os
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-PAGE        = 4
-QUESTION_ID = "44"
+PAGE        = 7
+QUESTION_ID = "90"
 COLOR       = (178, 0, 255)   # RGB target color
 WIDTH       = 36
 HEIGHT      = 36
