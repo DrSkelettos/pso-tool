@@ -463,7 +463,12 @@ var ScoreProcessor = (function () {
     var missing = 0;
     def.items.forEach(function (qid) {
       var v = _val(lookup, qid);
-      if (v === null) { missing++; return; }
+      if (v === null) {
+        missing++;
+        // Unanswered inverted items are treated as answered with 0 → inverted value = MAX_VAL
+        if (invertSet[qid]) sum += MAX_VAL;
+        return;
+      }
       sum += invertSet[qid] ? (MAX_VAL - v) : v;
     });
 

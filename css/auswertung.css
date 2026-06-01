@@ -27,6 +27,17 @@ body { background: #e8eaed; min-height: 100vh; }
   font-size: 10pt;
   color: #000;
 }
+/* Screen gap between the two pages */
+.a4-page + .a4-page { margin-top: 24px; }
+
+/* Print: each page on its own sheet */
+@media print {
+  .rpt-page-break {
+    page-break-after: always;
+    break-after: page;
+    box-shadow: none;
+  }
+}
 
 /* Kopfbereich */
 .rpt-header { text-align: center; margin-bottom: 18px; }
@@ -148,34 +159,28 @@ body { background: #e8eaed; min-height: 100vh; }
 }
 .rpt-gesamt-label { font-style: italic; }
 
-/* GESAMTWERT table */
-.rpt-gesamtwert-table {
-  margin-top: 6px;
-}
-.rpt-gesamtwert-row td {
+/* GESAMTWERT row (appended to bottom of subscores table) */
+.rpt-subscores-table .rpt-gesamtwert-row td {
   font-weight: bold;
   font-size: 10pt;
   background: #555 !important;
   color: #fff;
   border-color: #333;
 }
-.rpt-gesamtwert-row td.value-cell { color: #fff; }
+.rpt-subscores-table .rpt-gesamtwert-row td.value-cell { color: #fff; }
 .rpt-gesamtwert-label { letter-spacing: 0.03em; }
 
 /* Progress bar inside subscores / deficit tables */
 .rpt-subscores-table .progress,
-.rpt-gesamtwert-table .progress,
 .rpt-deficit-table   .progress {
   height: 12px;
   border-radius: 2px;
   background-color: #e0e0e0;
 }
-.rpt-subscores-table .progress-bar,
-.rpt-gesamtwert-table .progress-bar { background-color: #3a6ea8; }
+.rpt-subscores-table .progress-bar { background-color: #3a6ea8; }
 .rpt-deficit-table   .progress-bar  { background-color: #a83a3a; }
 
 .rpt-subscores-table td.bar-cell,
-.rpt-gesamtwert-table td.bar-cell,
 .rpt-deficit-table   td.bar-cell   { padding: 4px 10px; vertical-align: middle; }
 
 /* ── Deficit list table ────────────────────────────────────────────── */

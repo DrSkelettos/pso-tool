@@ -1,43 +1,49 @@
 /**
  * auswertung.js — Application logic for auswertung.html
  *
+ * Supports three modes:
+ *   phqd     — single PHQ-D PDF
+ *   opdsf    — single OPD-SF PDF
+ *   combined — one PDF (PHQ-D pages first, then OPD-SF pages)
+ *
  * Depends on (must be loaded first):
  *   libs/pdf.min.js, libs/opencv.js
- *   js/auswertung-ui.js  (UI stub)
+ *   js/auswertung-ui.js
  *   js/template-manager.js, js/pdf-handler.js, js/image-preprocessing.js
  *   js/marker-detector.js, js/perspective-normalizer.js, js/checkbox-detector.js
  *   js/question-processor.js, js/score-processor.js
- *   templates/phqd.js    (PHQD_TEMPLATE global)
+ *   templates/phqd.js   (PHQD_TEMPLATE global)
+ *   templates/opdsf.js  (OPDSF_TEMPLATE global)
  */
 (function () {
   'use strict';
 
+  // ── Templates ─────────────────────────────────────────────────────────────
+  var _phqdTemplate  = typeof PHQD_TEMPLATE  !== 'undefined' ? PHQD_TEMPLATE  : null;
+  var _opdsfTemplate = typeof OPDSF_TEMPLATE !== 'undefined' ? OPDSF_TEMPLATE : null;
+
   // ── Zustand ──────────────────────────────────────────────────────────────
-  var _cvReady   = false;
-  var _tmplReady = false;
-  var _pdfFile   = null;
+  var _cvReady = false;
+  var _mode    = 'phqd'; // 'phqd' | 'opdsf' | 'combined'
+  var _files   = { phqd: null, opdsf: null, combined: null };
+
+  // Verarbeitungs-Ergebnisse
+  var _phqdPageCanvases  = {}; // templatePage → canvas
+  var _opdsfPageCanvases = {};
+  var _phqdQResults      = [];
+  var _phqdSResults      = [];
+  var _opdsfQResults     = [];
+  var _opdsfSResults     = [];
+
+  // Review-Zustand
+  var _reviewOverrides = {};
+  var _reviewPhase     = null; // null | 'phqd' | 'opdsf'
 
   // ── DOM-Referenzen ───────────────────────────────────────────────────────
   var _btnAuswerten = document.getElementById('btn-auswerten');
   var _errEl        = document.getElementById('err-msg');
 
-  // ── Review-Zustand ───────────────────────────────────────────────────────
-  var _pageCanvases    = {}; // pageNum → HTMLCanvasElement (normalized scan)
-  var _lastQResults    = []; // letztes QuestionProcessor-Ergebnis
-  var _lastSResults    = []; // letztes ScoreProcessor-Ergebnis
-  var _reviewOverrides = {}; // qId → value|null (Benutzerkorrekturen)
-
   // ── Fortschrittssteuerung ─────────────────────────────────────────────────
-  // _progress: tracks cumulative steps. Call _initProgress(totalSteps) before
-  // the pipeline, then _step() after each completed sub-step.
-  //
-  // Schritt-Gewichtungen:
-  //   PDF laden        →  1 Schritt
-  //   Pro Seite        →  5 Schritte (render, preprocess, marker, normalize, analyze)
-  //   Fragen + Scores  →  2 Schritte
-  //
-  // Gesamtschritte für N Seiten: 1 + 5·N + 2
-
   var _progressTotal = 1;
   var _progressDone  = 0;
 
@@ -64,8 +70,12 @@
     _errEl.style.display = 'block';
   }
 
+  function _currentFile() {
+    return _files[_mode] || null;
+  }
+
   function _updateButton() {
-    _btnAuswerten.disabled = !(_cvReady && _tmplReady && _pdfFile);
+    _btnAuswerten.disabled = !(_cvReady && !!_currentFile());
   }
 
   function _esc(s) {
@@ -78,6 +88,10 @@
     if (!iso) return '—';
     var p = iso.split('-');
     return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : iso;
+  }
+
+  function _isUncertain(qr) {
+    return qr.status === 'uncertain' || qr.multipleChecked;
   }
 
   // ── Datum vorausfüllen ───────────────────────────────────────────────────
@@ -105,44 +119,43 @@
     }
   }
 
-  // ── Vorlage laden ────────────────────────────────────────────────────────
-  function _loadTemplate() {
-    _tmplReady = false;
-    try {
-      TemplateManager.loadFromObject(PHQD_TEMPLATE);
-      _tmplReady = true;
+  // ── Modus-Umschalter ─────────────────────────────────────────────────────
+  document.querySelectorAll('input[name="auswahl-mode"]').forEach(function (radio) {
+    radio.addEventListener('change', function () {
+      _mode = this.value;
+      document.getElementById('file-input-phqd').style.display     = _mode === 'phqd'     ? '' : 'none';
+      document.getElementById('file-input-opdsf').style.display    = _mode === 'opdsf'    ? '' : 'none';
+      document.getElementById('file-input-combined').style.display = _mode === 'combined' ? '' : 'none';
+      _errEl.style.display = 'none';
       _updateButton();
-    } catch (err) {
-      _showError('Vorlage konnte nicht geladen werden: ' + err.message);
-    }
-  }
+    });
+  });
 
-  // ── Ereignis: PDF ausgewählt ─────────────────────────────────────────────
-  document.getElementById('inp-pdf').addEventListener('change', function (e) {
-    _pdfFile             = e.target.files && e.target.files[0];
-    _errEl.style.display = 'none';
-    _updateButton();
+  // ── Datei-Events ─────────────────────────────────────────────────────────
+  ['phqd', 'opdsf', 'combined'].forEach(function (key) {
+    document.getElementById('inp-pdf-' + key).addEventListener('change', function (e) {
+      _files[key]          = e.target.files && e.target.files[0];
+      _errEl.style.display = 'none';
+      _updateButton();
+    });
   });
 
   // ── Ereignis: Auswerten ──────────────────────────────────────────────────
   _btnAuswerten.addEventListener('click', function () {
     _btnAuswerten.disabled = true;
     _errEl.style.display   = 'none';
+    _phqdPageCanvases      = {};
+    _opdsfPageCanvases     = {};
+    _phqdQResults          = [];
+    _phqdSResults          = [];
+    _opdsfQResults         = [];
+    _opdsfSResults         = [];
+    _reviewOverrides       = {};
+    _reviewPhase           = null;
 
     _runPipeline()
-      .then(function (results) {
-        _lastQResults = results.qResults;
-        _lastSResults = results.sResults;
-
-        var toReview = _lastQResults.filter(function (q) {
-          return q.status === 'uncertain' || q.multipleChecked;
-        });
-
-        if (toReview.length > 0) {
-          _showReview(toReview);
-        } else {
-          _displayResults(_lastSResults);
-        }
+      .then(function () {
+        _startReview();
       })
       .catch(function (err) {
         _btnAuswerten.disabled    = false;
@@ -158,65 +171,50 @@
     document.getElementById('report-toolbar').style.display = 'none';
     document.getElementById('review-card').style.display    = 'none';
     document.getElementById('form-card').style.display      = '';
-    document.getElementById('inp-pdf').value                = '';
     _btnAuswerten.textContent = 'Auswerten';
-    _btnAuswerten.disabled    = true;
-    _pdfFile         = null;
-    _pageCanvases    = {};
-    _lastQResults    = [];
-    _lastSResults    = [];
-    _reviewOverrides = {};
+    _btnAuswerten.disabled    = !(_cvReady && !!_currentFile());
+    _phqdPageCanvases  = {};
+    _opdsfPageCanvases = {};
+    _phqdQResults      = [];
+    _phqdSResults      = [];
+    _opdsfQResults     = [];
+    _opdsfSResults     = [];
+    _reviewOverrides   = {};
+    _reviewPhase       = null;
     TemplateManager.clear();
-    _loadTemplate();
-    _updateButton();
   });
 
   // ── Verarbeitungspipeline ────────────────────────────────────────────────
-  function _runPipeline() {
-    var allResults = [];
-    _pageCanvases = {}; // Reset für neue Auswertung
 
-    _initProgress(1); // Platzhalter — wird nach PDF-Load neu gesetzt
-
-    return PDFHandler.loadPDF(_pdfFile)
-      .then(function (pdfDoc) {
-        var totalPages  = pdfDoc.numPages;
-        var tmplPages   = TemplateManager.getPageCount();
-        var pagesToProc = Math.min(totalPages, tmplPages);
-
-        _initProgress(1 + pagesToProc * 5 + 2);
-        _step(); // PDF geladen
-
-        var chain = Promise.resolve();
-        for (var p = 1; p <= pagesToProc; p++) {
-          (function (pageNum) {
-            chain = chain.then(function () {
-              return _processPage(pdfDoc, pageNum, allResults);
-            });
-          })(p);
-        }
-        return chain;
-      })
-      .then(function () {
-        var tmpl     = TemplateManager.getTemplate();
-        var qResults = QuestionProcessor.processQuestions(allResults, tmpl.questions);
-        _step(); // Fragen ausgewertet
-
-        var sResults = ScoreProcessor.processScores(qResults, tmpl.scores);
-        _step(); // Scores berechnet
-
-        return { qResults: qResults, sResults: sResults };
-      });
+  /**
+   * Process pages of a loaded PDF using the currently active TemplateManager template.
+   * @param {Object}  pdfDoc        - pdf.js document
+   * @param {number}  templatePages - how many template pages to process
+   * @param {number}  pdfPageOffset - add this to templatePage to get the PDF page number
+   * @param {Object}  pageCanvasMap - canvas storage map (mutated)
+   * @param {Array}   rawResults    - checkbox results accumulator (mutated)
+   */
+  function _processPagesInternal(pdfDoc, templatePages, pdfPageOffset, pageCanvasMap, rawResults) {
+    var chain = Promise.resolve();
+    for (var p = 1; p <= templatePages; p++) {
+      (function (tPage) {
+        chain = chain.then(function () {
+          return _processPage(pdfDoc, tPage, tPage + pdfPageOffset, pageCanvasMap, rawResults);
+        });
+      })(p);
+    }
+    return chain;
   }
 
-  function _processPage(pdfDoc, pageNum, allResults) {
-    var fields = TemplateManager.getFieldsForPage(pageNum);
-    if (!fields.length) return Promise.resolve();
+  function _processPage(pdfDoc, templatePage, pdfPage, pageCanvasMap, allResults) {
+    var fields = TemplateManager.getFieldsForPage(templatePage);
+    if (!fields.length) { _step(); _step(); _step(); _step(); _step(); return Promise.resolve(); }
 
     var preprocessMats = null;
     var normResult     = null;
+    var tmpl           = TemplateManager.getTemplate();
 
-    return PDFHandler.renderPage(pdfDoc, pageNum)
+    return PDFHandler.renderPage(pdfDoc, pdfPage)
       .then(function (canvas) {
         _step(); // Seite gerendert
 
@@ -233,12 +231,12 @@
         normResult = PerspectiveNormalizer.normalizeToCanvas(
           preprocessMats.gray,
           markers,
-          TemplateManager.getTemplate().pageWidth,
-          TemplateManager.getTemplate().pageHeight
+          tmpl.pageWidth,
+          tmpl.pageHeight
         );
         _step(); // Perspektive korrigiert
 
-        _pageCanvases[pageNum] = normResult.canvas; // Für Review-Anzeige sichern
+        pageCanvasMap[templatePage] = normResult.canvas;
 
         var pageResults = CheckboxDetector.analyzeAll(normResult.normalized, fields, 0);
         pageResults.forEach(function (r) { allResults.push(r); });
@@ -252,6 +250,127 @@
         }
       });
   }
+
+  function _runPipeline() {
+    var mode = _mode;
+
+    if (mode === 'phqd') {
+      TemplateManager.loadFromObject(_phqdTemplate);
+      var phqdPages = TemplateManager.getPageCount();
+      _initProgress(1 + phqdPages * 5 + 2);
+      var raw = [];
+      return PDFHandler.loadPDF(_files.phqd)
+        .then(function (pdfDoc) { _step(); return _processPagesInternal(pdfDoc, phqdPages, 0, _phqdPageCanvases, raw); })
+        .then(function () {
+          _phqdQResults = QuestionProcessor.processQuestions(raw, _phqdTemplate.questions); _step();
+          _phqdSResults = ScoreProcessor.processScores(_phqdQResults, _phqdTemplate.scores); _step();
+        });
+
+    } else if (mode === 'opdsf') {
+      TemplateManager.loadFromObject(_opdsfTemplate);
+      var opdsfPages = TemplateManager.getPageCount();
+      _initProgress(1 + opdsfPages * 5 + 2);
+      var raw = [];
+      return PDFHandler.loadPDF(_files.opdsf)
+        .then(function (pdfDoc) { _step(); return _processPagesInternal(pdfDoc, opdsfPages, 0, _opdsfPageCanvases, raw); })
+        .then(function () {
+          _opdsfQResults = QuestionProcessor.processQuestions(raw, _opdsfTemplate.questions); _step();
+          _opdsfSResults = ScoreProcessor.processScores(_opdsfQResults, _opdsfTemplate.scores); _step();
+        });
+
+    } else { // combined
+      TemplateManager.loadFromObject(_phqdTemplate);
+      var phqdP = TemplateManager.getPageCount();
+      TemplateManager.loadFromObject(_opdsfTemplate);
+      var opdsfP = TemplateManager.getPageCount();
+      _initProgress(1 + phqdP * 5 + 2 + opdsfP * 5 + 2);
+
+      var rawPhqd  = [];
+      var rawOpdsf = [];
+      var _pdfDoc;
+
+      return PDFHandler.loadPDF(_files.combined)
+        .then(function (pdfDoc) {
+          _pdfDoc = pdfDoc;
+          _step(); // PDF geladen
+          TemplateManager.loadFromObject(_phqdTemplate);
+          return _processPagesInternal(pdfDoc, phqdP, 0, _phqdPageCanvases, rawPhqd);
+        })
+        .then(function () {
+          _phqdQResults = QuestionProcessor.processQuestions(rawPhqd, _phqdTemplate.questions); _step();
+          _phqdSResults = ScoreProcessor.processScores(_phqdQResults, _phqdTemplate.scores);    _step();
+          TemplateManager.loadFromObject(_opdsfTemplate);
+          return _processPagesInternal(_pdfDoc, opdsfP, phqdP, _opdsfPageCanvases, rawOpdsf);
+        })
+        .then(function () {
+          _opdsfQResults = QuestionProcessor.processQuestions(rawOpdsf, _opdsfTemplate.questions); _step();
+          _opdsfSResults = ScoreProcessor.processScores(_opdsfQResults, _opdsfTemplate.scores);    _step();
+        });
+    }
+  }
+
+  // ── Review-Steuerung ─────────────────────────────────────────────────────
+
+  function _startReview() {
+    // PHQ-D uncertain?
+    var phqdUncertain = (_mode !== 'opdsf')  ? _phqdQResults.filter(_isUncertain)  : [];
+    // OPDSF uncertain?
+    var opdsfUncertain = (_mode !== 'phqd')  ? _opdsfQResults.filter(_isUncertain) : [];
+
+    if (phqdUncertain.length > 0) {
+      _reviewPhase     = 'phqd';
+      _reviewOverrides = {};
+      _showReview(phqdUncertain, _phqdTemplate, _phqdPageCanvases, 'PHQ-D');
+    } else if (opdsfUncertain.length > 0) {
+      _reviewPhase     = 'opdsf';
+      _reviewOverrides = {};
+      _showReview(opdsfUncertain, _opdsfTemplate, _opdsfPageCanvases, 'OPD-SF');
+    } else {
+      _finishAndDisplay();
+    }
+  }
+
+  function _applyOverrides(qResults) {
+    return qResults.map(function (qr) {
+      if (_reviewOverrides.hasOwnProperty(qr.id)) {
+        var ov = _reviewOverrides[qr.id];
+        return {
+          id:              qr.id,
+          value:           ov,
+          status:          ov !== null ? 'answered' : 'not_answered',
+          field:           qr.field,
+          ratio:           qr.ratio,
+          confidence:      qr.confidence,
+          multipleChecked: false
+        };
+      }
+      return qr;
+    });
+  }
+
+  // ── Ereignis: Überprüfung abschließen ────────────────────────────────────
+  document.getElementById('btn-review-done').addEventListener('click', function () {
+    if (_reviewPhase === 'phqd') {
+      _phqdQResults = _applyOverrides(_phqdQResults);
+      _phqdSResults = ScoreProcessor.processScores(_phqdQResults, _phqdTemplate.scores);
+
+      var opdsfUncertain = (_mode === 'combined') ? _opdsfQResults.filter(_isUncertain) : [];
+      if (opdsfUncertain.length > 0) {
+        _reviewPhase     = 'opdsf';
+        _reviewOverrides = {};
+        document.getElementById('review-card').style.display = 'none';
+        _showReview(opdsfUncertain, _opdsfTemplate, _opdsfPageCanvases, 'OPD-SF');
+      } else {
+        document.getElementById('review-card').style.display = 'none';
+        _finishAndDisplay();
+      }
+    } else if (_reviewPhase === 'opdsf') {
+      _opdsfQResults = _applyOverrides(_opdsfQResults);
+      _opdsfSResults = ScoreProcessor.processScores(_opdsfQResults, _opdsfTemplate.scores);
+      document.getElementById('review-card').style.display = 'none';
+      _finishAndDisplay();
+    }
+  });
 
   // ── Report-Renderer ──────────────────────────────────────────────────────
 
@@ -475,16 +594,9 @@
       tbody.appendChild(gRow);
     });
 
-    table.appendChild(tbody);
-    frag.appendChild(table);
-
-    // GESAMTWERT row (separate small table for visual separation)
+    // GESAMTWERT row — appended to the SAME table so columns align
     if (section.global) {
       var gScore = lookup[section.global];
-      var gTable = document.createElement('table');
-      gTable.className = 'rpt-table rpt-gesamtwert-table';
-
-      var gTbody = document.createElement('tbody');
       var gTr    = document.createElement('tr');
       gTr.className = 'rpt-gesamtwert-row';
 
@@ -511,10 +623,11 @@
       }
       gTr.appendChild(gTdB);
 
-      gTbody.appendChild(gTr);
-      gTable.appendChild(gTbody);
-      frag.appendChild(gTable);
+      tbody.appendChild(gTr);
     }
+
+    table.appendChild(tbody);
+    frag.appendChild(table);
 
     return frag;
   }
@@ -536,9 +649,10 @@
       return { label: item.label || s.label || scoreId, score: s };
     }).filter(Boolean);
 
-    scored.sort(function (a, b) { return (a.score.sum / a.score.max) - (b.score.sum / b.score.max); });
+    // Sort descending: highest value first
+    scored.sort(function (a, b) { return (b.score.sum / b.score.max) - (a.score.sum / a.score.max); });
 
-    var deficits = scored.slice(0, section.top_n || 7);
+    var deficits = section.top_n ? scored.slice(0, section.top_n) : scored;
 
     var table = document.createElement('table');
     table.className = 'rpt-table rpt-deficit-table';
@@ -637,15 +751,38 @@
     return frag;
   }
 
-  /** Main entry point: render the A4 report and switch views */
-  function _displayResults(scoreResults) {
-    var name   = document.getElementById('inp-name').value.trim() || '—';
-    var dob    = document.getElementById('inp-dob').value;
-    var date   = document.getElementById('inp-date').value;
-    var report = TemplateManager.getTemplate().report;
-    var lookup = _buildScoreLookup(scoreResults);
-    var page   = document.getElementById('a4-page');
-    page.innerHTML = '';
+  /** Main entry point: render the A4 report pages and switch views */
+  function _finishAndDisplay() {
+    var name = document.getElementById('inp-name').value.trim() || '—';
+    var dob  = document.getElementById('inp-dob').value;
+    var date = document.getElementById('inp-date').value;
+
+    var phqdPage  = document.getElementById('a4-page-phqd');
+    var opdsfPage = document.getElementById('a4-page-opdsf');
+    phqdPage.innerHTML  = '';
+    opdsfPage.innerHTML = '';
+
+    if (_phqdSResults.length) {
+      phqdPage.style.display = '';
+      _renderReportPage(phqdPage, _phqdTemplate, _phqdSResults, name, dob, date);
+    } else {
+      phqdPage.style.display = 'none';
+    }
+    if (_opdsfSResults.length) {
+      opdsfPage.style.display = '';
+      _renderReportPage(opdsfPage, _opdsfTemplate, _opdsfSResults, name, dob, date);
+    } else {
+      opdsfPage.style.display = 'none';
+    }
+
+    document.getElementById('form-card').style.display      = 'none';
+    document.getElementById('a4-wrap').style.display        = 'block';
+    document.getElementById('report-toolbar').style.display = 'flex';
+  }
+
+  function _renderReportPage(pageEl, tmpl, sResults, name, dob, date) {
+    var report = tmpl.report;
+    var lookup = _buildScoreLookup(sResults);
 
     // Header
     var hdr = document.createElement('div');
@@ -653,57 +790,55 @@
     hdr.innerHTML =
       '<h1>' + _esc(report.title) + '</h1>' +
       '<p class="subtitle">' + _esc(report.subtitle) + '</p>';
-    page.appendChild(hdr);
+    pageEl.appendChild(hdr);
 
     // Patientenzeile
     var pat = document.createElement('div');
     pat.className = 'rpt-patient';
     pat.innerHTML =
-      '<span><span class="label">Name&nbsp;</span>'          + _esc(name)      + '</span>' +
-      '<span><span class="label">Geburtsdatum&nbsp;</span>'  + _fmtDate(dob)   + '</span>' +
-      '<span><span class="label">Datum&nbsp;</span>'         + _fmtDate(date)  + '</span>';
-    page.appendChild(pat);
+      '<span><span class="label">Name&nbsp;</span>'         + _esc(name)     + '</span>' +
+      '<span><span class="label">Geburtsdatum&nbsp;</span>' + _fmtDate(dob)  + '</span>' +
+      '<span><span class="label">Datum&nbsp;</span>'        + _fmtDate(date) + '</span>';
+    pageEl.appendChild(pat);
 
     // Sections
     (report.sections || []).forEach(function (section) {
-      page.appendChild(_renderSection(section, lookup));
+      pageEl.appendChild(_renderSection(section, lookup));
     });
-
-    // Ansicht wechseln
-    document.getElementById('form-card').style.display      = 'none';
-    document.getElementById('a4-wrap').style.display        = 'block';
-    document.getElementById('report-toolbar').style.display = 'flex';
   }
+
 
   // ── Überprüfungsansicht ──────────────────────────────────────────────────
 
   /**
    * Build and display the review UI for questions that need manual verification.
-   * Each question shows a cropped strip of the normalized scan (±200 px around
-   * the field row) with transparent, clickable field overlays.
-   *
-   * @param {Array} reviewQuestions - subset of _lastQResults that need review
+   * @param {Array}  reviewQuestions - subset of qResults that need review
+   * @param {Object} tmpl            - template for field/question definitions
+   * @param {Object} pageCanvasMap   - templatePage → canvas map
+   * @param {string} sourceLabel     - displayed in header ('PHQ-D' or 'OPD-SF')
    */
-  function _showReview(reviewQuestions) {
-    var tmpl      = TemplateManager.getTemplate();
+  function _showReview(reviewQuestions, tmpl, pageCanvasMap, sourceLabel) {
     var pageW     = tmpl.pageWidth;
     var pageH     = tmpl.pageHeight;
-    var DISPLAY_W   = 760;  // px displayed width
-    var STRIP_H     = 400;  // px in template space (±200 around center)
-    var FIELD_OFS_X = -5;   // px correction for field overlay horizontal offset
-    var FIELD_OFS_Y = -5;   // px correction for field overlay vertical offset
+    var DISPLAY_W   = 760;
+    var STRIP_H     = 400;
+    var FIELD_OFS_X = -5;
+    var FIELD_OFS_Y = -5;
     var scale       = DISPLAY_W / pageW;
 
-    // Build O(1) lookups
+    // Build lookups
     var fieldDef = {};
     tmpl.fields.forEach(function (f) { fieldDef[f.id] = f; });
 
     var qDefMap = {};
     (tmpl.questions || []).forEach(function (q) { qDefMap[q.id] = q; });
 
+    // Source label in card header
+    var labelEl = document.getElementById('review-source-label');
+    if (labelEl) labelEl.textContent = sourceLabel ? '(' + sourceLabel + ')' : '';
+
     var container = document.getElementById('review-questions');
     container.innerHTML = '';
-    _reviewOverrides = {};
 
     reviewQuestions.forEach(function (qr) {
       var def = qDefMap[qr.id];
@@ -719,7 +854,6 @@
       var cropH = Math.min(STRIP_H, pageH - cropY);
       var dispH = Math.round(cropH * scale);
 
-      // Init override from auto-detected value
       _reviewOverrides[qr.id] = (qr.value !== null && qr.value !== undefined) ? qr.value : null;
 
       // ── Block ────────────────────────────────────────────────────────────
@@ -743,7 +877,7 @@
       cvs.width  = DISPLAY_W;
       cvs.height = dispH;
 
-      var srcCanvas = _pageCanvases[page];
+      var srcCanvas = pageCanvasMap[page];
       if (srcCanvas) {
         var ctx = cvs.getContext('2d');
         ctx.drawImage(srcCanvas, 0, cropY, pageW, cropH, 0, 0, DISPLAY_W, dispH);
@@ -806,37 +940,14 @@
       container.appendChild(block);
     });
 
-    document.getElementById('form-card').style.display  = 'none';
+    document.getElementById('form-card').style.display   = 'none';
     document.getElementById('review-card').style.display = '';
   }
 
   // ── Ereignis: Überprüfung abschließen ────────────────────────────────────
-  document.getElementById('btn-review-done').addEventListener('click', function () {
-    // Merge user overrides into last question results, re-score
-    var updated = _lastQResults.map(function (qr) {
-      if (_reviewOverrides.hasOwnProperty(qr.id)) {
-        var ov = _reviewOverrides[qr.id];
-        return {
-          id:              qr.id,
-          value:           ov,
-          status:          ov !== null ? 'answered' : 'not_answered',
-          field:           qr.field,
-          ratio:           qr.ratio,
-          confidence:      qr.confidence,
-          multipleChecked: false
-        };
-      }
-      return qr;
-    });
-
-    var newScores = ScoreProcessor.processScores(updated, TemplateManager.getTemplate().scores);
-    document.getElementById('review-card').style.display = 'none';
-    _displayResults(newScores);
-  });
+  // (handler is defined above near _applyOverrides)
 
   // ── Start ─────────────────────────────────────────────────────────────────
-  _loadTemplate();
-
   if (typeof cv === 'undefined' || !cv.Mat) {
     _waitForOpenCV();
   } else {

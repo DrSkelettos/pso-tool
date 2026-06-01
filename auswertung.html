@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PHQ-D Auswertung</title>
+  <title>Fragebogen-Auswertung</title>
   <link rel="stylesheet" href="libs/bootstrap.min.css">
   <link rel="stylesheet" href="css/auswertung.css">
 </head>
@@ -14,7 +14,7 @@
   <!-- ── Eingabe-Formular ─────────────────────────────────────────────────── -->
   <div id="form-card" class="card shadow form-card">
     <div class="card-header text-center fw-semibold py-3 form-card-header">
-      PHQ-D Auswertung
+      Fragebogen-Auswertung
     </div>
     <div class="card-body px-4 py-4">
 
@@ -33,9 +33,29 @@
         <input type="date" class="form-control" id="inp-date">
       </div>
 
-      <div class="mb-4">
-        <label class="form-label" for="inp-pdf">PHQ-D Scan (PDF)</label>
-        <input type="file" class="form-control" id="inp-pdf" accept="application/pdf">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Fragebogen</label>
+        <div class="btn-group w-100" role="group" aria-label="Fragebogen-Auswahl">
+          <input type="radio" class="btn-check" name="auswahl-mode" id="mode-phqd" value="phqd" checked autocomplete="off">
+          <label class="btn btn-outline-primary" for="mode-phqd">PHQ-D</label>
+          <input type="radio" class="btn-check" name="auswahl-mode" id="mode-opdsf" value="opdsf" autocomplete="off">
+          <label class="btn btn-outline-primary" for="mode-opdsf">OPD-SF</label>
+          <input type="radio" class="btn-check" name="auswahl-mode" id="mode-combined" value="combined" autocomplete="off">
+          <label class="btn btn-outline-primary" for="mode-combined">PHQ-D + OPD-SF</label>
+        </div>
+      </div>
+
+      <div id="file-input-phqd" class="mb-4">
+        <label class="form-label" for="inp-pdf-phqd">PHQ-D Scan (PDF)</label>
+        <input type="file" class="form-control" id="inp-pdf-phqd" accept="application/pdf">
+      </div>
+      <div id="file-input-opdsf" class="mb-4" style="display:none;">
+        <label class="form-label" for="inp-pdf-opdsf">OPD-SF Scan (PDF)</label>
+        <input type="file" class="form-control" id="inp-pdf-opdsf" accept="application/pdf">
+      </div>
+      <div id="file-input-combined" class="mb-4" style="display:none;">
+        <label class="form-label" for="inp-pdf-combined">Kombinierter Scan (PDF, PHQ-D zuerst)</label>
+        <input type="file" class="form-control" id="inp-pdf-combined" accept="application/pdf">
       </div>
 
       <div id="err-msg" class="alert alert-danger py-2 mb-3" style="display:none;"></div>
@@ -48,10 +68,12 @@
 
     </div>
   </div>
+
   <!-- ── Überprüfungs-Ansicht ───────────────────────────────────────────── -->
   <div id="review-card" class="card shadow review-card" style="display:none;">
     <div class="card-header fw-semibold py-3">
       Manuelle Überprüfung erforderlich
+      <span id="review-source-label" class="text-muted fw-normal ms-2" style="font-size:.9em;"></span>
     </div>
     <div class="card-body px-4 py-4">
       <p class="text-muted mb-4">
@@ -67,15 +89,17 @@
       </div>
     </div>
   </div>
+
   <!-- ── Ergebnis-Toolbar (kein Druck) ──────────────────────────────────── -->
   <div id="report-toolbar" class="no-print justify-content-between align-items-center">
     <button class="btn btn-outline-secondary btn-sm" id="btn-new">&#8592; Neue Auswertung</button>
     <button class="btn btn-primary btn-sm" onclick="window.print()">&#128438; Drucken / Speichern</button>
   </div>
 
-  <!-- ── A4-Seite ───────────────────────────────────────────────────────── -->
+  <!-- ── A4-Seiten ──────────────────────────────────────────────────────── -->
   <div id="a4-wrap" class="a4-wrap">
-    <div class="a4-page" id="a4-page"></div>
+    <div class="a4-page rpt-page-break" id="a4-page-phqd"  style="display:none;"></div>
+    <div class="a4-page rpt-page-break" id="a4-page-opdsf" style="display:none;"></div>
   </div>
 
 </div><!-- /container -->
@@ -91,6 +115,7 @@
 <script src="libs/opencv.js"></script>
 <script src="js/template-manager.js"></script>
 <script src="templates/phqd.js"></script>
+<script src="templates/opdsf.js"></script>
 <script src="js/pdf-handler.js"></script>
 <script src="js/image-preprocessing.js"></script>
 <script src="js/marker-detector.js"></script>

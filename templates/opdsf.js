@@ -1,4 +1,4 @@
-{
+var OPDSF_TEMPLATE = {
   "pageWidth": 2480,
   "pageHeight": 3508,
   "offsetX": 0,
@@ -5233,4 +5233,4 @@
       }
     ]
   }
-}
+};
