@@ -372,8 +372,220 @@
     return rows;
   }
 
+  /** Render grouped subscores table (OPD-SF style) */
+  function _renderGroupedSubscoresSection(section, lookup) {
+    var frag = document.createDocumentFragment();
+
+    var sh = document.createElement('div');
+    sh.className   = 'rpt-section-title';
+    sh.textContent = section.title || 'Strukturelle Auswertung';
+    frag.appendChild(sh);
+
+    var table  = document.createElement('table');
+    table.className = 'rpt-table rpt-subscores-table';
+
+    // Header
+    var thead = document.createElement('thead');
+    var hrow  = document.createElement('tr');
+    [['Strukturbereich', '17%'], ['Strukturaspekt', '28%'], ['Summe', '8%'], ['Max', '7%'], ['Profil', '40%']]
+      .forEach(function (col) {
+        var th = document.createElement('th');
+        th.textContent = col[0];
+        th.style.width = col[1];
+        hrow.appendChild(th);
+      });
+    thead.appendChild(hrow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+
+    (section.groups || []).forEach(function (group, gi) {
+      var rows     = group.subscores || [];
+      var rowCount = rows.length + 1; // +1 for GESAMT
+      var evenGroup = gi % 2 === 1;
+
+      rows.forEach(function (item, i) {
+        var score = lookup[item.score];
+        var tr    = document.createElement('tr');
+        if (evenGroup) tr.classList.add('rpt-group-even');
+
+        // Strukturbereich — rowspan on first sub-row only
+        if (i === 0) {
+          var tdArea = document.createElement('td');
+          tdArea.className = 'rpt-area-cell';
+          tdArea.setAttribute('rowspan', String(rowCount));
+          tdArea.textContent = group.label;
+          tr.appendChild(tdArea);
+        }
+
+        var tdName = document.createElement('td');
+        tdName.className   = 'label-cell';
+        tdName.textContent = item.label;
+        tr.appendChild(tdName);
+
+        var tdSum = document.createElement('td');
+        tdSum.className   = 'value-cell';
+        tdSum.textContent = score ? String(score.sum) : '—';
+        tr.appendChild(tdSum);
+
+        var tdMax = document.createElement('td');
+        tdMax.className   = 'value-cell';
+        tdMax.textContent = score ? String(score.max) : '—';
+        tr.appendChild(tdMax);
+
+        var tdBar = document.createElement('td');
+        tdBar.className = 'bar-cell';
+        if (score && score.max > 0) {
+          tdBar.appendChild(_buildProgressBar(score.sum || 0, score.max));
+        } else {
+          tdBar.textContent = '—';
+        }
+        tr.appendChild(tdBar);
+
+        tbody.appendChild(tr);
+      });
+
+      // GESAMT row
+      var total = group.total ? lookup[group.total] : null;
+      var gRow  = document.createElement('tr');
+      gRow.className = 'rpt-gesamt-row' + (evenGroup ? ' rpt-group-even' : '');
+
+      var tdGL = document.createElement('td');
+      tdGL.className   = 'label-cell rpt-gesamt-label';
+      tdGL.textContent = 'GESAMT';
+      gRow.appendChild(tdGL);
+
+      var tdGS = document.createElement('td');
+      tdGS.className   = 'value-cell';
+      tdGS.textContent = total ? String(total.sum) : '—';
+      gRow.appendChild(tdGS);
+
+      var tdGM = document.createElement('td');
+      tdGM.className   = 'value-cell';
+      tdGM.textContent = total ? String(total.max) : '—';
+      gRow.appendChild(tdGM);
+
+      var tdGB = document.createElement('td');
+      tdGB.className = 'bar-cell';
+      if (total && total.max > 0) {
+        tdGB.appendChild(_buildProgressBar(total.sum || 0, total.max));
+      }
+      gRow.appendChild(tdGB);
+
+      tbody.appendChild(gRow);
+    });
+
+    table.appendChild(tbody);
+    frag.appendChild(table);
+
+    // GESAMTWERT row (separate small table for visual separation)
+    if (section.global) {
+      var gScore = lookup[section.global];
+      var gTable = document.createElement('table');
+      gTable.className = 'rpt-table rpt-gesamtwert-table';
+
+      var gTbody = document.createElement('tbody');
+      var gTr    = document.createElement('tr');
+      gTr.className = 'rpt-gesamtwert-row';
+
+      var gTdL = document.createElement('td');
+      gTdL.className = 'label-cell rpt-gesamtwert-label';
+      gTdL.setAttribute('colspan', '2');
+      gTdL.textContent = 'GESAMTWERT';
+      gTr.appendChild(gTdL);
+
+      var gTdS = document.createElement('td');
+      gTdS.className   = 'value-cell';
+      gTdS.textContent = gScore ? String(gScore.sum) : '—';
+      gTr.appendChild(gTdS);
+
+      var gTdM = document.createElement('td');
+      gTdM.className   = 'value-cell';
+      gTdM.textContent = gScore ? String(gScore.max) : '—';
+      gTr.appendChild(gTdM);
+
+      var gTdB = document.createElement('td');
+      gTdB.className = 'bar-cell';
+      if (gScore && gScore.max > 0) {
+        gTdB.appendChild(_buildProgressBar(gScore.sum || 0, gScore.max));
+      }
+      gTr.appendChild(gTdB);
+
+      gTbody.appendChild(gTr);
+      gTable.appendChild(gTbody);
+      frag.appendChild(gTable);
+    }
+
+    return frag;
+  }
+
+  /** Render a sorted deficit list (lowest scoring subscores first) */
+  function _renderDeficitListSection(section, lookup) {
+    var frag = document.createDocumentFragment();
+
+    var sh = document.createElement('div');
+    sh.className   = 'rpt-section-title';
+    sh.textContent = section.title || 'Ausgeprägteste strukturelle Defizite';
+    frag.appendChild(sh);
+
+    // Resolve, filter, and sort by ratio ascending (most deficit first)
+    var scored = (section.subscores || []).map(function (item) {
+      var scoreId = item.score || item;
+      var s       = lookup[scoreId];
+      if (!s || s.sum === undefined || !s.max) return null;
+      return { label: item.label || s.label || scoreId, score: s };
+    }).filter(Boolean);
+
+    scored.sort(function (a, b) { return (a.score.sum / a.score.max) - (b.score.sum / b.score.max); });
+
+    var deficits = scored.slice(0, section.top_n || 7);
+
+    var table = document.createElement('table');
+    table.className = 'rpt-table rpt-deficit-table';
+
+    var thead = document.createElement('thead');
+    var hrow  = document.createElement('tr');
+    [['Strukturaspekt', '40%'], ['Summe / Max', '15%'], ['Profil', '45%']].forEach(function (col) {
+      var th = document.createElement('th');
+      th.textContent = col[0];
+      th.style.width = col[1];
+      hrow.appendChild(th);
+    });
+    thead.appendChild(hrow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    deficits.forEach(function (d) {
+      var tr = document.createElement('tr');
+
+      var tdN = document.createElement('td');
+      tdN.className   = 'label-cell';
+      tdN.textContent = d.label;
+      tr.appendChild(tdN);
+
+      var tdV = document.createElement('td');
+      tdV.className   = 'value-cell';
+      tdV.textContent = d.score.sum + ' / ' + d.score.max;
+      tr.appendChild(tdV);
+
+      var tdB = document.createElement('td');
+      tdB.className = 'bar-cell';
+      tdB.appendChild(_buildProgressBar(d.score.sum || 0, d.score.max));
+      tr.appendChild(tdB);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    frag.appendChild(table);
+
+    return frag;
+  }
+
   /** Render a complete report section (heading + table + footnotes) */
   function _renderSection(section, lookup) {
+    if (section.type === 'grouped_subscores') return _renderGroupedSubscoresSection(section, lookup);
+    if (section.type === 'deficit_list')      return _renderDeficitListSection(section, lookup);
+
     var frag = document.createDocumentFragment();
 
     var sh = document.createElement('div');

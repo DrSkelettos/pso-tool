@@ -5051,8 +5051,239 @@
     }
   },
   "report": {
-    "title": "OPD-Strukturfragebogen",
+    "title": "OPD-Strukturfragebogen Langfassung (OPD-SF)",
     "subtitle": "Auswertungsbogen",
-    "sections": []
+    "sections": [
+      {
+        "title": "Strukturelle Auswertung",
+        "type": "grouped_subscores",
+        "groups": [
+          {
+            "label": "Selbstwahrnehmung",
+            "subscores": [
+              {
+                "score": "selbstreflexion",
+                "label": "Selbstreflexion"
+              },
+              {
+                "score": "affektdifferenzierung",
+                "label": "Affektdifferenzierung"
+              },
+              {
+                "score": "identitaet",
+                "label": "Identität"
+              }
+            ],
+            "total": "selbstwahrnehmung"
+          },
+          {
+            "label": "Objektwahrnehmung",
+            "subscores": [
+              {
+                "score": "realistische_objektwahrnehmung",
+                "label": "Realistische Objektwahrnehmung"
+              },
+              {
+                "score": "ganzheitliche_objektwahrnehmung",
+                "label": "Ganzheitliche Objektwahrnehmung"
+              },
+              {
+                "score": "selbst_objekt_differenzierung",
+                "label": "Selbst-Objekt-Differenzierung"
+              }
+            ],
+            "total": "objektwahrnehmung"
+          },
+          {
+            "label": "Selbstregulierung",
+            "subscores": [
+              {
+                "score": "impulssteuerung",
+                "label": "Impulssteuerung"
+              },
+              {
+                "score": "affekttoleranz",
+                "label": "Affekttoleranz"
+              },
+              {
+                "score": "selbstwertregulierung",
+                "label": "Selbstwertregulierung"
+              }
+            ],
+            "total": "selbstregulierung"
+          },
+          {
+            "label": "Regulierung des Objektbezugs",
+            "subscores": [
+              {
+                "score": "interessenausgleich_in_beziehungen",
+                "label": "Interessenausgleich"
+              },
+              {
+                "score": "antizipation",
+                "label": "Antizipation"
+              }
+            ],
+            "total": "regulierung_des_objektbezugs"
+          },
+          {
+            "label": "Kommunikation nach innen",
+            "subscores": [
+              {
+                "score": "affekte_erleben",
+                "label": "Affekte erleben"
+              },
+              {
+                "score": "phantasie_nutzen",
+                "label": "Phantasie nutzen"
+              },
+              {
+                "score": "koerperselbst",
+                "label": "Körperselbst"
+              }
+            ],
+            "total": "emotionale_kommunikation_nach_innen"
+          },
+          {
+            "label": "Kommunikation nach außen",
+            "subscores": [
+              {
+                "score": "kontaktaufnahme",
+                "label": "Kontaktaufnahme"
+              },
+              {
+                "score": "affektmitteilung",
+                "label": "Affektmitteilung"
+              },
+              {
+                "score": "empathie",
+                "label": "Empathie"
+              }
+            ],
+            "total": "emotionale_kommunikation_nach_aussen"
+          },
+          {
+            "label": "Bindung nach innen",
+            "subscores": [
+              {
+                "score": "internalisierung",
+                "label": "Internalisierung"
+              },
+              {
+                "score": "introjekte_nutzen",
+                "label": "Introjekte nutzen"
+              }
+            ],
+            "total": "bindung_innen"
+          },
+          {
+            "label": "Bindung nach außen",
+            "subscores": [
+              {
+                "score": "hilfe_annehmen",
+                "label": "Hilfe annehmen"
+              },
+              {
+                "score": "bindung_loesen",
+                "label": "Bindung lösen"
+              }
+            ],
+            "total": "bindung_aussen"
+          }
+        ],
+        "global": "global"
+      },
+      {
+        "type": "deficit_list",
+        "title": "Ausgeprägteste strukturelle Defizite",
+        "subscores": [
+          {
+            "score": "selbstreflexion",
+            "label": "Selbstreflexion"
+          },
+          {
+            "score": "affektdifferenzierung",
+            "label": "Affektdifferenzierung"
+          },
+          {
+            "score": "identitaet",
+            "label": "Identität"
+          },
+          {
+            "score": "realistische_objektwahrnehmung",
+            "label": "Realistische Objektwahrnehmung"
+          },
+          {
+            "score": "ganzheitliche_objektwahrnehmung",
+            "label": "Ganzheitliche Objektwahrnehmung"
+          },
+          {
+            "score": "selbst_objekt_differenzierung",
+            "label": "Selbst-Objekt-Differenzierung"
+          },
+          {
+            "score": "impulssteuerung",
+            "label": "Impulssteuerung"
+          },
+          {
+            "score": "affekttoleranz",
+            "label": "Affekttoleranz"
+          },
+          {
+            "score": "selbstwertregulierung",
+            "label": "Selbstwertregulierung"
+          },
+          {
+            "score": "interessenausgleich_in_beziehungen",
+            "label": "Interessenausgleich"
+          },
+          {
+            "score": "antizipation",
+            "label": "Antizipation"
+          },
+          {
+            "score": "affekte_erleben",
+            "label": "Affekte erleben"
+          },
+          {
+            "score": "phantasie_nutzen",
+            "label": "Phantasie nutzen"
+          },
+          {
+            "score": "koerperselbst",
+            "label": "Körperselbst"
+          },
+          {
+            "score": "kontaktaufnahme",
+            "label": "Kontaktaufnahme"
+          },
+          {
+            "score": "affektmitteilung",
+            "label": "Affektmitteilung"
+          },
+          {
+            "score": "empathie",
+            "label": "Empathie"
+          },
+          {
+            "score": "internalisierung",
+            "label": "Internalisierung"
+          },
+          {
+            "score": "introjekte_nutzen",
+            "label": "Introjekte nutzen"
+          },
+          {
+            "score": "hilfe_annehmen",
+            "label": "Hilfe annehmen"
+          },
+          {
+            "score": "bindung_loesen",
+            "label": "Bindung lösen"
+          }
+        ],
+        "top_n": 7
+      }
+    ]
   }
 }
