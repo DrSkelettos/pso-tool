@@ -5231,6 +5231,7 @@ var OPDSF_TEMPLATE = {
           }
         ]
       }
-    ]
+    ],
+    "show_unanswered": true
   }
 };

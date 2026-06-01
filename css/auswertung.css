@@ -1,3 +1,19 @@
+/* ── Nicht beantwortete Fragen ────────────────────────────────────── */
+.rpt-unanswered-wrap {
+  margin-top: 18px;
+}
+.rpt-unanswered-table {
+  width: 100%;
+}
+.rpt-unanswered-value {
+  width: 45%;
+  text-align: left;
+  font-weight: normal;
+}
+.rpt-unanswered-flagged .rpt-unanswered-value {
+  font-weight: bold;
+}
+
 /* ── Bildschirm-Layout ─────────────────────────────────────────────── */
 body { background: #e8eaed; min-height: 100vh; }
 .form-card { max-width: 480px; margin: 60px auto; }

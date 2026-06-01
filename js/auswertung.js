@@ -764,13 +764,13 @@
 
     if (_phqdSResults.length) {
       phqdPage.style.display = '';
-      _renderReportPage(phqdPage, _phqdTemplate, _phqdSResults, name, dob, date);
+      _renderReportPage(phqdPage, _phqdTemplate, _phqdSResults, _phqdQResults, name, dob, date);
     } else {
       phqdPage.style.display = 'none';
     }
     if (_opdsfSResults.length) {
       opdsfPage.style.display = '';
-      _renderReportPage(opdsfPage, _opdsfTemplate, _opdsfSResults, name, dob, date);
+      _renderReportPage(opdsfPage, _opdsfTemplate, _opdsfSResults, _opdsfQResults, name, dob, date);
     } else {
       opdsfPage.style.display = 'none';
     }
@@ -780,7 +780,7 @@
     document.getElementById('report-toolbar').style.display = 'flex';
   }
 
-  function _renderReportPage(pageEl, tmpl, sResults, name, dob, date) {
+  function _renderReportPage(pageEl, tmpl, sResults, qResults, name, dob, date) {
     var report = tmpl.report;
     var lookup = _buildScoreLookup(sResults);
 
@@ -805,6 +805,46 @@
     (report.sections || []).forEach(function (section) {
       pageEl.appendChild(_renderSection(section, lookup));
     });
+
+    // Unanswered questions summary (opt-in per template)
+    if (report.show_unanswered && qResults && qResults.length) {
+      pageEl.appendChild(_renderUnansweredSummary(qResults, tmpl.questions ? tmpl.questions.length : qResults.length));
+    }
+  }
+
+  /** Render unanswered-questions row at the bottom of a report page */
+  function _renderUnansweredSummary(qResults, totalQuestions) {
+    var unanswered = qResults.filter(function (q) {
+      return q.value === null || q.value === undefined || q.status === 'not_answered';
+    }).length;
+    var pct    = totalQuestions > 0 ? Math.round(unanswered / totalQuestions * 100) : 0;
+    var flagged = pct > 10;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'rpt-unanswered-wrap';
+
+    var table = document.createElement('table');
+    table.className = 'rpt-table rpt-unanswered-table';
+
+    var tbody = document.createElement('tbody');
+    var tr    = document.createElement('tr');
+    if (flagged) tr.classList.add('rpt-unanswered-flagged');
+
+    var tdL = document.createElement('td');
+    tdL.className   = 'label-cell';
+    tdL.textContent = 'Nicht beantwortete Fragen';
+    tr.appendChild(tdL);
+
+    var tdV = document.createElement('td');
+    tdV.className   = 'value-cell rpt-unanswered-value';
+    if (flagged) tdV.classList.add('rpt-cell-positive');
+    tdV.textContent = unanswered + ' von ' + totalQuestions + ' (' + pct + ' %)';
+    tr.appendChild(tdV);
+
+    tbody.appendChild(tr);
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
   }
 
 
