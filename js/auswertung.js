@@ -21,6 +21,12 @@
   var _btnAuswerten = document.getElementById('btn-auswerten');
   var _errEl        = document.getElementById('err-msg');
 
+  // ── Review-Zustand ───────────────────────────────────────────────────────
+  var _pageCanvases    = {}; // pageNum → HTMLCanvasElement (normalized scan)
+  var _lastQResults    = []; // letztes QuestionProcessor-Ergebnis
+  var _lastSResults    = []; // letztes ScoreProcessor-Ergebnis
+  var _reviewOverrides = {}; // qId → value|null (Benutzerkorrekturen)
+
   // ── Fortschrittssteuerung ─────────────────────────────────────────────────
   // _progress: tracks cumulative steps. Call _initProgress(totalSteps) before
   // the pipeline, then _step() after each completed sub-step.
@@ -124,8 +130,19 @@
     _errEl.style.display   = 'none';
 
     _runPipeline()
-      .then(function (scoreResults) {
-        _displayResults(scoreResults);
+      .then(function (results) {
+        _lastQResults = results.qResults;
+        _lastSResults = results.sResults;
+
+        var toReview = _lastQResults.filter(function (q) {
+          return q.status === 'uncertain' || q.multipleChecked;
+        });
+
+        if (toReview.length > 0) {
+          _showReview(toReview);
+        } else {
+          _displayResults(_lastSResults);
+        }
       })
       .catch(function (err) {
         _btnAuswerten.disabled    = false;
@@ -139,11 +156,16 @@
   document.getElementById('btn-new').addEventListener('click', function () {
     document.getElementById('a4-wrap').style.display        = 'none';
     document.getElementById('report-toolbar').style.display = 'none';
+    document.getElementById('review-card').style.display    = 'none';
     document.getElementById('form-card').style.display      = '';
     document.getElementById('inp-pdf').value                = '';
     _btnAuswerten.textContent = 'Auswerten';
     _btnAuswerten.disabled    = true;
-    _pdfFile = null;
+    _pdfFile         = null;
+    _pageCanvases    = {};
+    _lastQResults    = [];
+    _lastSResults    = [];
+    _reviewOverrides = {};
     TemplateManager.clear();
     _loadTemplate();
     _updateButton();
@@ -152,6 +174,7 @@
   // ── Verarbeitungspipeline ────────────────────────────────────────────────
   function _runPipeline() {
     var allResults = [];
+    _pageCanvases = {}; // Reset für neue Auswertung
 
     _initProgress(1); // Platzhalter — wird nach PDF-Load neu gesetzt
 
@@ -182,7 +205,7 @@
         var sResults = ScoreProcessor.processScores(qResults, tmpl.scores);
         _step(); // Scores berechnet
 
-        return sResults;
+        return { qResults: qResults, sResults: sResults };
       });
   }
 
@@ -214,6 +237,8 @@
           TemplateManager.getTemplate().pageHeight
         );
         _step(); // Perspektive korrigiert
+
+        _pageCanvases[pageNum] = normResult.canvas; // Für Review-Anzeige sichern
 
         var pageResults = CheckboxDetector.analyzeAll(normResult.normalized, fields, 0);
         pageResults.forEach(function (r) { allResults.push(r); });
@@ -437,6 +462,165 @@
     document.getElementById('a4-wrap').style.display        = 'block';
     document.getElementById('report-toolbar').style.display = 'flex';
   }
+
+  // ── Überprüfungsansicht ──────────────────────────────────────────────────
+
+  /**
+   * Build and display the review UI for questions that need manual verification.
+   * Each question shows a cropped strip of the normalized scan (±200 px around
+   * the field row) with transparent, clickable field overlays.
+   *
+   * @param {Array} reviewQuestions - subset of _lastQResults that need review
+   */
+  function _showReview(reviewQuestions) {
+    var tmpl      = TemplateManager.getTemplate();
+    var pageW     = tmpl.pageWidth;
+    var pageH     = tmpl.pageHeight;
+    var DISPLAY_W   = 760;  // px displayed width
+    var STRIP_H     = 400;  // px in template space (±200 around center)
+    var FIELD_OFS_X = -5;   // px correction for field overlay horizontal offset
+    var FIELD_OFS_Y = -5;   // px correction for field overlay vertical offset
+    var scale       = DISPLAY_W / pageW;
+
+    // Build O(1) lookups
+    var fieldDef = {};
+    tmpl.fields.forEach(function (f) { fieldDef[f.id] = f; });
+
+    var qDefMap = {};
+    (tmpl.questions || []).forEach(function (q) { qDefMap[q.id] = q; });
+
+    var container = document.getElementById('review-questions');
+    container.innerHTML = '';
+    _reviewOverrides = {};
+
+    reviewQuestions.forEach(function (qr) {
+      var def = qDefMap[qr.id];
+      if (!def || !def.fields || !def.fields.length) return;
+
+      var fDefs = def.fields.map(function (fid) { return fieldDef[fid]; }).filter(Boolean);
+      if (!fDefs.length) return;
+
+      var page = fDefs[0].page || 1;
+      var yCen = fDefs.reduce(function (s, f) { return s + f.y + f.height / 2; }, 0) / fDefs.length;
+
+      var cropY = Math.max(0, Math.min(Math.round(yCen - STRIP_H / 2), pageH - STRIP_H));
+      var cropH = Math.min(STRIP_H, pageH - cropY);
+      var dispH = Math.round(cropH * scale);
+
+      // Init override from auto-detected value
+      _reviewOverrides[qr.id] = (qr.value !== null && qr.value !== undefined) ? qr.value : null;
+
+      // ── Block ────────────────────────────────────────────────────────────
+      var block = document.createElement('div');
+      block.className = 'review-question';
+
+      var reason = qr.multipleChecked ? 'mehrere Markierungen' : 'unsicher erkannt';
+      var lbl = document.createElement('div');
+      lbl.className = 'review-question-label';
+      lbl.textContent = 'Frage\u00a0' + qr.id + '\u2003\u2013\u2003' + reason;
+      block.appendChild(lbl);
+
+      // ── Scan-Ausschnitt ───────────────────────────────────────────────────
+      var wrap = document.createElement('div');
+      wrap.className = 'review-canvas-wrap';
+      wrap.style.width  = DISPLAY_W + 'px';
+      wrap.style.height = dispH + 'px';
+
+      var cvs = document.createElement('canvas');
+      cvs.className = 'review-canvas';
+      cvs.width  = DISPLAY_W;
+      cvs.height = dispH;
+
+      var srcCanvas = _pageCanvases[page];
+      if (srcCanvas) {
+        var ctx = cvs.getContext('2d');
+        ctx.drawImage(srcCanvas, 0, cropY, pageW, cropH, 0, 0, DISPLAY_W, dispH);
+      }
+      wrap.appendChild(cvs);
+
+      // ── Klickbare Feld-Overlays ───────────────────────────────────────────
+      var boxes = {}; // value → div element
+
+      fDefs.forEach(function (fd) {
+        var val = parseInt(fd.id.split('_').pop(), 10);
+
+        var box = document.createElement('div');
+        box.className = 'review-field-box';
+        box.setAttribute('title', 'Antwort\u00a0' + val);
+
+        if (val === _reviewOverrides[qr.id]) {
+          box.classList.add('selected');
+          if (qr.status === 'uncertain') box.classList.add('auto-uncertain');
+        }
+
+        var bLeft = Math.round(fd.x * scale) + FIELD_OFS_X;
+        var bTop  = Math.round((fd.y - cropY) * scale) + FIELD_OFS_Y;
+        var bW    = Math.max(20, Math.round(fd.width  * scale));
+        var bH    = Math.max(20, Math.round(fd.height * scale));
+
+        box.style.left   = bLeft + 'px';
+        box.style.top    = bTop  + 'px';
+        box.style.width  = bW    + 'px';
+        box.style.height = bH    + 'px';
+
+        boxes[val] = box;
+        wrap.appendChild(box);
+      });
+
+      // Attach click handlers after all boxes are built
+      fDefs.forEach(function (fd) {
+        var val = parseInt(fd.id.split('_').pop(), 10);
+        boxes[val].addEventListener('click', (function (qid, clickedVal) {
+          return function () {
+            // First user interaction: clear auto-uncertain styling on all boxes
+            Object.keys(boxes).forEach(function (k) {
+              boxes[k].classList.remove('auto-uncertain');
+            });
+
+            if (_reviewOverrides[qid] === clickedVal) {
+              // Toggle off → keine Antwort
+              _reviewOverrides[qid] = null;
+              Object.keys(boxes).forEach(function (k) { boxes[k].classList.remove('selected'); });
+            } else {
+              _reviewOverrides[qid] = clickedVal;
+              Object.keys(boxes).forEach(function (k) { boxes[k].classList.remove('selected'); });
+              boxes[clickedVal].classList.add('selected');
+            }
+          };
+        })(qr.id, val));
+      });
+
+      block.appendChild(wrap);
+      container.appendChild(block);
+    });
+
+    document.getElementById('form-card').style.display  = 'none';
+    document.getElementById('review-card').style.display = '';
+  }
+
+  // ── Ereignis: Überprüfung abschließen ────────────────────────────────────
+  document.getElementById('btn-review-done').addEventListener('click', function () {
+    // Merge user overrides into last question results, re-score
+    var updated = _lastQResults.map(function (qr) {
+      if (_reviewOverrides.hasOwnProperty(qr.id)) {
+        var ov = _reviewOverrides[qr.id];
+        return {
+          id:              qr.id,
+          value:           ov,
+          status:          ov !== null ? 'answered' : 'not_answered',
+          field:           qr.field,
+          ratio:           qr.ratio,
+          confidence:      qr.confidence,
+          multipleChecked: false
+        };
+      }
+      return qr;
+    });
+
+    var newScores = ScoreProcessor.processScores(updated, TemplateManager.getTemplate().scores);
+    document.getElementById('review-card').style.display = 'none';
+    _displayResults(newScores);
+  });
 
   // ── Start ─────────────────────────────────────────────────────────────────
   _loadTemplate();

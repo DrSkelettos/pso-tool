@@ -12,6 +12,8 @@
  *   threshold    — items with value == answer_value counted; positive if ≥ minimum_count
  *   sum          — direct sum of item values with optional severity table
  *   special_sum  — sum with per-item value mapping (range key or multi-item key)
+ *   subscore     — sum of item values with optional per-item inversion (value = MAX - v)
+ *   subscales    — sum of previously-computed subscores
  */
 var ScoreProcessor = (function () {
   'use strict';
@@ -447,6 +449,65 @@ var ScoreProcessor = (function () {
     };
   }
 
+  /**
+   * OPD-SF subscores: sum of item values, inverting selected items.
+   * { items: ["1","67",...], invert: ["62","55"] }
+   * Inverted value = MAX_ITEM_VALUE - value  (defaults to 4 for a 0–4 scale)
+   */
+  function _processSubscore(id, def, lookup) {
+    var MAX_VAL  = def.max_item_value !== undefined ? def.max_item_value : 4;
+    var invertSet = {};
+    (def.invert || []).forEach(function (qid) { invertSet[qid] = true; });
+
+    var sum     = 0;
+    var missing = 0;
+    def.items.forEach(function (qid) {
+      var v = _val(lookup, qid);
+      if (v === null) { missing++; return; }
+      sum += invertSet[qid] ? (MAX_VAL - v) : v;
+    });
+
+    var maxPossible = def.items.length * MAX_VAL;
+    return {
+      id:            id,
+      label:         _label(id),
+      type:          'subscore',
+      sum:           sum,
+      max:           maxPossible,
+      itemCount:     def.items.length,
+      hasUnanswered: missing > 0,
+      note:          sum + ' / ' + maxPossible
+    };
+  }
+
+  /**
+   * Aggregate across already-computed subscores.
+   * { subscales: ["selbstreflexion", "affektdifferenzierung", ...] }
+   * scoreMap: id → computed result object (from pass 1).
+   */
+  function _processSubscales(id, def, scoreMap) {
+    var sum     = 0;
+    var max     = 0;
+    var missing = 0;
+    def.subscales.forEach(function (sid) {
+      var s = scoreMap[sid];
+      if (!s || s.sum === undefined || s.sum === null) { missing++; return; }
+      sum += s.sum;
+      max += (s.max || 0);
+    });
+
+    return {
+      id:            id,
+      label:         _label(id),
+      type:          'subscore',
+      sum:           sum,
+      max:           max,
+      itemCount:     def.subscales.length,
+      hasUnanswered: missing > 0,
+      note:          sum + ' / ' + max
+    };
+  }
+
   // ─── Dispatcher ──────────────────────────────────────────────────────────
 
   function _dispatch(id, def, lookup) {
@@ -462,6 +523,7 @@ var ScoreProcessor = (function () {
     if (def.required_yes && def.required_no)                            return _processBinge(id, def, lookup);
     if (def.items && def.condition && def.condition.minimum_count !== undefined)
                                                                          return _processThreshold(id, def, lookup);
+    if (def.items && Array.isArray(def.invert))                         return _processSubscore(id, def, lookup);
     if (def.item && def.value_labels)                                    return _processValueLabel(id, def, lookup);
     if (def.item && def.condition)                                       return _processSingleItem(id, def, lookup);
     return { id: id, label: _label(id), type: 'unknown', positive: null, hasUnanswered: false, note: 'Unrecognized rule structure' };
@@ -471,16 +533,34 @@ var ScoreProcessor = (function () {
 
   /**
    * Process all scores defined in the template.
+   * Two-pass: leaf scores first (items/rules), then subscale aggregates.
    * @param {Array}  questionResults  — output of QuestionProcessor.processQuestions
    * @param {Object} scores           — template.scores object
-   * @returns {Array} score result objects
+   * @returns {Array} score result objects (in original key order)
    */
   function processScores(questionResults, scores) {
     if (!scores || typeof scores !== 'object') return [];
-    var lookup = _buildLookup(questionResults);
-    return Object.keys(scores).map(function (id) {
-      return _dispatch(id, scores[id], lookup);
+    var lookup  = _buildLookup(questionResults);
+    var scoreMap = {};
+    var keys    = Object.keys(scores);
+
+    // Pass 1: everything except subscale aggregates
+    keys.forEach(function (id) {
+      var def = scores[id];
+      if (!def.subscales) {
+        scoreMap[id] = _dispatch(id, def, lookup);
+      }
     });
+
+    // Pass 2: subscale aggregates (may depend on pass-1 results)
+    keys.forEach(function (id) {
+      var def = scores[id];
+      if (def.subscales) {
+        scoreMap[id] = _processSubscales(id, def, scoreMap);
+      }
+    });
+
+    return keys.map(function (id) { return scoreMap[id]; });
   }
 
   return { processScores: processScores };

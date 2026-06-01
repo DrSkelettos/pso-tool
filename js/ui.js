@@ -344,6 +344,19 @@ var UI = (function () {
             escapeHtml(s.severity) + '</span>';
         }
         resultCell = valStr;
+      } else if (s.type === 'subscore') {
+        typeLabel  = 'Subscore';
+        rowClass   = '';
+        var pct    = s.max > 0 ? Math.round((s.sum / s.max) * 100) : 0;
+        resultCell =
+          '<div class="d-flex align-items-center gap-1">' +
+            '<strong style="min-width:2.5rem;">' + s.sum + '</strong>' +
+            '<span style="color:#6c757d;font-size:0.72rem;">/ ' + s.max + '</span>' +
+            '<div class="confidence-bar flex-grow-1" style="margin-left:4px;">' +
+              '<div class="confidence-fill" style="width:' + pct + '%;background:#0d6efd;"></div>' +
+            '</div>' +
+            '<span style="font-size:0.72rem;min-width:2.2rem;text-align:right;">' + pct + '%</span>' +
+          '</div>';
       } else {
         typeLabel  = 'Unknown';
         resultCell = '—';

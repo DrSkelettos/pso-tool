@@ -48,7 +48,25 @@
 
     </div>
   </div>
-
+  <!-- ── Überprüfungs-Ansicht ───────────────────────────────────────────── -->
+  <div id="review-card" class="card shadow review-card" style="display:none;">
+    <div class="card-header fw-semibold py-3">
+      Manuelle Überprüfung erforderlich
+    </div>
+    <div class="card-body px-4 py-4">
+      <p class="text-muted mb-4">
+        Die folgenden Fragen konnten nicht eindeutig erkannt werden.
+        Bitte klicken Sie auf die richtige Antwort. Ein erneutes Klicken
+        hebt die Auswahl auf (keine Antwort).
+      </p>
+      <div id="review-questions"></div>
+      <div class="d-grid mt-4">
+        <button class="btn btn-primary btn-lg" id="btn-review-done">
+          Auswertung abschließen
+        </button>
+      </div>
+    </div>
+  </div>
   <!-- ── Ergebnis-Toolbar (kein Druck) ──────────────────────────────────── -->
   <div id="report-toolbar" class="no-print justify-content-between align-items-center">
     <button class="btn btn-outline-secondary btn-sm" id="btn-new">&#8592; Neue Auswertung</button>
